@@ -497,7 +497,7 @@ const getDuplicateTabsForPanel = async (duplicateTabsGroups, retainedTabs) => {
     let groupIndex = 0;
     for (const [key, duplicateTabs] of duplicateTabsGroups) {
         const retainedTab = retainedTabs ? retainedTabs.get(key) : null;
-        const retainedTabId = retainedTab ? retainedTabs.get(key).id : null;
+        const retainedTabId = retainedTab ? retainedTab.id : null;
         await Promise.all(Array.from(duplicateTabs, duplicateTab => setDuplicateTabPanel(duplicateTab, duplicateTabsPanel, groupIndex, retainedTabId)));
         groupIndex++;
     }
