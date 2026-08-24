@@ -158,6 +158,83 @@ const updatePrioritizeActiveWindowState = (scopeValue) => {
     if (el) el.disabled = scopeValue !== "A" && scopeValue !== "CA";
 };
 
+const VIVALDI_UI_RUNTIME_ID_FOR_SCOPE_UI = "mpognobbkildjkofajifpdfhcoklimli";
+const VIVALDI_WORKSPACE_SCOPE_PROTOCOL_FOR_UI = 1;
+
+const probeVivaldiWorkspaceBridgeFromPanel = () => new Promise(resolve => {
+    const requestId = `dtc-vw-ui-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    let settled = false;
+    const finish = value => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timerId);
+        resolve(value);
+    };
+    const timerId = setTimeout(() => finish(false), 1000);
+    try {
+        chrome.runtime.sendMessage(
+            VIVALDI_UI_RUNTIME_ID_FOR_SCOPE_UI,
+            {
+                action: "DTC_VIVALDI_WORKSPACE_PING",
+                protocolVersion: VIVALDI_WORKSPACE_SCOPE_PROTOCOL_FOR_UI,
+                requestId: requestId
+            },
+            response => {
+                if (chrome.runtime.lastError) return finish(false);
+                finish(!!response
+                    && response.ok === true
+                    && response.protocolVersion === VIVALDI_WORKSPACE_SCOPE_PROTOCOL_FOR_UI
+                    && response.requestId === requestId);
+            }
+        );
+    } catch (_) {
+        finish(false);
+    }
+});
+
+const initializeVivaldiWorkspaceScopeUi = async () => {
+    const scopeSelect = document.getElementById("scope");
+    if (!scopeSelect) return;
+
+    let workspaceOption = scopeSelect.querySelector("option[value='VW']");
+    if (!workspaceOption) {
+        workspaceOption = document.createElement("option");
+        workspaceOption.value = "VW";
+        workspaceOption.className = "vivaldiWorkspaceItem";
+        workspaceOption.textContent = chrome.i18n.getMessage("activeVivaldiWorkspace") || "Active Vivaldi Workspace";
+        const activeWindowOption = scopeSelect.querySelector("option[value='C']");
+        scopeSelect.insertBefore(workspaceOption, activeWindowOption || null);
+    }
+
+    let status = document.getElementById("vivaldiWorkspaceBridgeStatus");
+    if (!status) {
+        status = document.createElement("small");
+        status.id = "vivaldiWorkspaceBridgeStatus";
+        status.className = "form-text text-muted hidden";
+        status.textContent = chrome.i18n.getMessage("vivaldiWorkspaceBridgeUnavailable")
+            || "Vivaldi Workspace Bridge unavailable; no tabs will be closed in this scope.";
+        scopeSelect.insertAdjacentElement("afterend", status);
+    }
+
+    let storedScope = scopeSelect.value;
+    try {
+        const response = await sendMessage("getStoredOptions");
+        storedScope = response?.data?.storedOptions?.scope?.value ?? storedScope;
+    } catch (_) {}
+
+    const available = await probeVivaldiWorkspaceBridgeFromPanel();
+    const applyState = (scopeValue) => {
+        const selected = scopeValue === "VW";
+        workspaceOption.disabled = !available;
+        workspaceOption.classList.toggle("hidden", !available && !selected);
+        status.classList.toggle("hidden", available || !selected);
+    };
+
+    if (storedScope === "VW") workspaceOption.selected = true;
+    applyState(storedScope);
+    scopeSelect.addEventListener("change", () => applyState(scopeSelect.value));
+};
+
 // eslint-disable-next-line no-unused-vars
 const updateGroupButton = (grouped) => {
     const btn = document.getElementById("groupDuplicateTabsBtn");
@@ -227,3 +304,5 @@ const saveOption = (name, value, refresh) => sendMessage("setStoredOption", { "n
 
 // eslint-disable-next-line no-unused-vars
 const requestGetDuplicateTabs = () => sendMessage("getDuplicateTabs", { "windowId": activeWindowId });
+
+document.addEventListener("DOMContentLoaded", initializeVivaldiWorkspaceScopeUi);
