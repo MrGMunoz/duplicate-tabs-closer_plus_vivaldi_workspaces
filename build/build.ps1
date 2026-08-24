@@ -15,6 +15,7 @@ $SingleFiles = @(
     "tabsInfo.js",
     "tst.js",
     "urlUtils.js",
+    "vivaldiWorkspace.js",
     "worker.js",
     "LICENSE",
     "README.md"
