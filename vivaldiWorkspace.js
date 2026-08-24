@@ -151,24 +151,52 @@ const requestVivaldiWorkspaceSnapshot = async (windowId, tabIds, operation = "qu
     return validateVivaldiWorkspaceBridgeResponse(transport.response, requestId, windowId, tabIds, operation);
 };
 
+// Filter candidate tabs to the active Workspace. requiredTabs are validated too,
+// but are not added to the returned candidate list. This matters during a URL
+// navigation race where chrome.tabs.query({url: ...}) can temporarily omit the
+// observed tab even though other matching candidates are already returned.
 // eslint-disable-next-line no-unused-vars
-const getActiveVivaldiWorkspaceTabs = async (windowId, tabs) => {
-    if (!Array.isArray(tabs) || tabs.length === 0) {
+const getActiveVivaldiWorkspaceTabs = async (windowId, tabs, requiredTabs = []) => {
+    if (!Array.isArray(tabs) || !Array.isArray(requiredTabs)) {
+        setVivaldiWorkspaceDiagnostic("VW-CANDIDATE-TABS-INVALID", { operation: "filter" });
+        return null;
+    }
+    if (tabs.length === 0 && requiredTabs.length === 0) {
         setVivaldiWorkspaceDiagnostic("VW-NO-CANDIDATE-TABS", { operation: "filter" });
         return null;
     }
-    const tabIds = tabs.map(tab => tab && tab.id);
-    const snapshot = await requestVivaldiWorkspaceSnapshot(windowId, tabIds, "filter");
+
+    const requestedIds = [];
+    const seenIds = new Set();
+    for (const tab of [...tabs, ...requiredTabs]) {
+        if (!tab || !Number.isInteger(tab.id) || tab.id <= 0) {
+            setVivaldiWorkspaceDiagnostic("VW-CANDIDATE-TAB-ID-INVALID", { operation: "filter" });
+            return null;
+        }
+        if (!seenIds.has(tab.id)) {
+            seenIds.add(tab.id);
+            requestedIds.push(tab.id);
+        }
+    }
+
+    const snapshot = await requestVivaldiWorkspaceSnapshot(windowId, requestedIds, "filter");
     if (!snapshot) return null;
+
+    for (const requiredTab of requiredTabs) {
+        const metadata = snapshot.metadataById.get(requiredTab.id);
+        if (!metadata || metadata.workspaceId !== snapshot.activeWorkspaceId) {
+            setVivaldiWorkspaceDiagnostic("VW-REQUIRED-TAB-OUTSIDE-ACTIVE-WORKSPACE", {
+                operation: "filter",
+                tabId: requiredTab.id
+            });
+            return null;
+        }
+    }
 
     const scopedTabs = tabs.filter(tab => {
         const metadata = snapshot.metadataById.get(tab.id);
         return metadata && metadata.workspaceId === snapshot.activeWorkspaceId;
     });
-    if (scopedTabs.length === 0) {
-        setVivaldiWorkspaceDiagnostic("VW-ACTIVE-WORKSPACE-EMPTY", { operation: "filter" });
-        return null;
-    }
 
     clearVivaldiWorkspaceDiagnostic();
     return {
