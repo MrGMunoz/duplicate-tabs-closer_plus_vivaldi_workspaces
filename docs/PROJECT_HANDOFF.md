@@ -15,13 +15,73 @@ Completed stages:
 - ETAPA 0 — preparation and fork verification: complete
 - ETAPA 1 — read-only audit and feasibility study: complete
 - ETAPA 2 — architecture research/design: complete
-- ETAPA 3 — implementation/review pass: complete; browser validation is next
+- ETAPA 3 — implementation/review pass: complete enough for browser validation
+- ETAPA 4A — Chromium build + unpacked fork load in Vivaldi: **confirmed complete by maintainer**
 
-Next stage:
+Current unresolved stage:
 
-- ETAPA 4 — build, install the unpacked fork, install the Vivaldi UI Bridge, and verify the connection on the maintainer's real Vivaldi installation
+- ETAPA 4B — persistent Vivaldi Workspace Bridge installation: **instructions delivered, execution/result unknown**
+
+The previous chat was temporary. Do not assume the maintainer followed ETAPA 4B instructions after they were provided.
 
 Do not merge, release, publish, or open an upstream PR without explicit maintainer approval.
+
+## Immediate resume checkpoint
+
+ETAPA 4A was confirmed successful by the maintainer. Confirmed facts:
+
+- branch used: `feature/vivaldi-workspace-scope`
+- Chromium build completed successfully
+- unpacked fork loaded successfully in Vivaldi
+- fork extension ID confirmed exactly as `jkhljmjemfaeoklndkcnehbcnmfjcfam`
+- original Duplicate Tabs Closer extension was disabled, not removed
+- fork was left with `On duplicate tab detected = Do nothing`
+- before persistent Bridge installation, Scope remained `Active Window`, which was expected
+
+ETAPA 4B instructions were then given, but the maintainer warned that closing Vivaldi would also lose the temporary chat. Therefore **none of the following may be assumed to have happened**:
+
+- locating the current Vivaldi `resources\vivaldi` directory
+- backing up `window.html` as `window.html.dtc-backup`
+- creating `resources\vivaldi\dtc-mods`
+- copying `vivaldi-bridge/dtc-vivaldi-workspace-bridge.js`
+- editing `window.html`
+- restarting Vivaldi
+- seeing `Active Vivaldi Workspace` in Scope
+- selecting `VW`
+- seeing or not seeing a Bridge error
+
+The first question in a new chat should be only to establish which state applies:
+
+1. ETAPA 4B not started
+2. Bridge installed and appears to work
+3. installation attempted but an error occurred
+4. maintainer is unsure
+
+If unsure, treat ETAPA 4B as **not validated**.
+
+## ETAPA 4B procedure already delivered
+
+The persistent Bridge procedure given to the maintainer was:
+
+1. Open `vivaldi://about` and confirm the current Vivaldi version.
+2. Locate that installation's `resources\vivaldi` directory and verify it contains `window.html`.
+3. Back up `window.html` as `window.html.dtc-backup`.
+4. Create `resources\vivaldi\dtc-mods`.
+5. Copy repository file `vivaldi-bridge/dtc-vivaldi-workspace-bridge.js` into that folder.
+6. Fully close Vivaldi before editing `window.html`.
+7. Add exactly this line immediately before `</body>`:
+
+```html
+<script src="dtc-mods/dtc-vivaldi-workspace-bridge.js"></script>
+```
+
+8. Save `window.html` and reopen Vivaldi.
+9. Keep `On duplicate tab detected = Do nothing`.
+10. Verify `Active Vivaldi Workspace` appears in Scope.
+11. Select it only while still in `Do nothing` mode.
+12. Verify no Bridge unavailable/error warning appears.
+
+Do not proceed to real duplicate-closing tests until ETAPA 4B is positively verified.
 
 ## Repository relationship
 
@@ -73,7 +133,7 @@ The second probe passed explicit window/tab IDs and confirmed:
 - Vivaldi returned a real `workspaceId` for each test tab
 - Workspace A and Workspace B had different stable IDs
 - switching Workspaces changed `activeWorkspaceId` correctly
-- a pinned tab retained its original Workspace membership
+- a pinned tab retained its Workspace membership
 
 Therefore the selected architecture is:
 
@@ -149,19 +209,19 @@ When `VW` is selected and an error exists, popup/options should show a short fai
 
 ## Build state
 
-The Chromium PowerShell build uses its own `$SingleFiles` list, not only `build/list.txt`. Both build inputs now include `vivaldiWorkspace.js`.
+The Chromium PowerShell build uses its own `$SingleFiles` list, not only `build/list.txt`. Both build inputs include `vivaldiWorkspace.js`.
 
 The build script copies `manifest-c.json` to a temporary `manifest.json`, strips the development-only `externally_connectable` key from the packaged Chrome build, and creates `duplicate-tabs-closer-chrome.zip`.
 
-ETAPA 4 must verify the generated package and then extract it to a folder for Vivaldi's **Load unpacked** flow.
+ETAPA 4A confirmed that this build path works on the maintainer's machine and that the unpacked fork loads with the intended stable ID.
 
 ## Remaining validation / limitations
 
 ### Persistent Bridge installation
 
-The Bridge has been proven through the Vivaldi UI DevTools console, but persistent installation as a Vivaldi UI JavaScript mod has not yet been tested on the maintainer's machine.
+The Bridge has been proven through the Vivaldi UI DevTools console, but **persistent installation has not yet been confirmed in this handoff**.
 
-Current Vivaldi modding guidance still injects JavaScript through `window.html` inside Vivaldi's `resources/vivaldi` UI directory. Browser updates can overwrite that modification. ETAPA 4 must back up the original UI file, install the Bridge conservatively, restart Vivaldi, and verify the Bridge before enabling `VW`.
+Instructions were delivered for JavaScript-mod injection through `window.html` inside Vivaldi's `resources\vivaldi` UI directory. Browser updates can overwrite that modification.
 
 If the persistent Bridge does not load, the feature must remain fail-closed and the diagnostic should be copied back to the development chat.
 
@@ -171,7 +231,7 @@ The `VW` UI currently has safe English fallback strings. Proper locale messages 
 
 ### Automated validation
 
-Upstream has no real npm automated test suite. No claim of full regression safety should be made before build/runtime testing. ETAPA 4/5 must verify behavior in the real browser, including fail-closed scenarios.
+Upstream has no real npm automated test suite. No claim of full regression safety should be made before ETAPA 4B/5 runtime testing.
 
 ## Existing upstream behavior that must remain unchanged
 
