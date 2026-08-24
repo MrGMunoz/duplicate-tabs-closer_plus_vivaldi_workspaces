@@ -28,11 +28,49 @@ Important architectural discovery: a normal Chromium extension in Vivaldi 8.1 ca
 
 The maintainer is not a programmer. This project is developed using AI-assisted development / vibe-coding. When human intervention is required, give exact click-by-click instructions using the manual-action format defined in `AGENTS.md`. Do not assume Git/GitHub/DevTools knowledge.
 
-Current stage at the time this file was created: **ETAPA 3 — implementation in progress**.
+## Current checkpoint — read this carefully
+
+- ETAPA 0: complete.
+- ETAPA 1: complete.
+- ETAPA 2: complete.
+- ETAPA 3: implementation/review pass complete enough for real-browser validation.
+- ETAPA 4A: **confirmed complete by the maintainer**.
+- ETAPA 4B: **instructions were given, but execution/result is NOT known** because the previous chat was temporary and the maintainer may have closed Vivaldi before following them.
+
+ETAPA 4A confirmed facts:
+
+- the maintainer downloaded branch `feature/vivaldi-workspace-scope`
+- the Chromium build completed successfully
+- the unpacked fork loaded successfully in Vivaldi
+- the fork extension ID was confirmed as `jkhljmjemfaeoklndkcnehbcnmfjcfam`
+- the original Duplicate Tabs Closer extension was disabled, not removed
+- the fork was left with `On duplicate tab detected = Do nothing`
+- before installing the persistent Bridge, scope remained `Active Window`, which was expected
+
+ETAPA 4B instructions already delivered:
+
+- locate the current Vivaldi `resources\vivaldi` directory and confirm `window.html`
+- back up `window.html` as `window.html.dtc-backup`
+- create `resources\vivaldi\dtc-mods`
+- copy `vivaldi-bridge/dtc-vivaldi-workspace-bridge.js` there
+- add immediately before `</body>` in `window.html`:
+  `<script src="dtc-mods/dtc-vivaldi-workspace-bridge.js"></script>`
+- restart Vivaldi
+- keep `On duplicate tab detected = Do nothing`
+- verify that `Active Vivaldi Workspace` appears in Scope and can be selected without a Bridge error
+
+**Do not assume any ETAPA 4B step actually happened.** The first thing the new chat should do is ask the maintainer which of these states is true:
+
+1. `ETAPA 4B no iniciada`
+2. `Bridge instalado y funciona`
+3. `Intenté instalarlo pero hubo un error`
+4. `No estoy seguro`
+
+If the maintainer says the Bridge was installed, verify the result before any duplicate-closing test. If the maintainer is unsure, treat ETAPA 4B as not validated and proceed conservatively.
 
 Current branch: `feature/vivaldi-workspace-scope`.
 
-Known remaining issues before browser testing are documented in `docs/PROJECT_HANDOFF.md`; address those before declaring ETAPA 3 complete.
+`master` must remain untouched unless the maintainer separately approves a merge later.
 
 Do not merge, release, publish, open an upstream PR, force-push, delete remote branches, make an official version bump, add a major dependency, or make another major architecture change without explicit maintainer approval.
 
