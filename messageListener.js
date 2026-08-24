@@ -30,7 +30,8 @@ const handleMessage = (message, sender, response) => {
             break;
         }
         case "closePanelTabs": {
-            if (!sender || sender.id !== chrome.runtime.id || !message.data) return response({ closed: false });
+            if (!sender || sender.id !== chrome.runtime.id || !message.data || typeof closePanelTabs !== "function")
+                return response({ closed: false });
             closePanelTabs(message.data.tabIds)
                 .then(closed => response({ closed: closed }))
                 .catch(() => response({ closed: false }));
