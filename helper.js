@@ -229,7 +229,7 @@ const setTabBadgeBackgroundColor = (tabId, color) => new Promise((resolve) => {
 });
 
 // eslint-disable-next-line no-unused-vars
-const setWindowBadgeBackgroundColor = (windowId, color) => browser.action.setBadgeBackgroundColor({ windowId: windowId, text: text }).catch(() => {});
+const setWindowBadgeBackgroundColor = (windowId, color) => browser.action.setBadgeBackgroundColor({ windowId: windowId, color: color }).catch(() => {});
 
 // eslint-disable-next-line no-unused-vars
 const getStoredOptions = () => Promise.all([
