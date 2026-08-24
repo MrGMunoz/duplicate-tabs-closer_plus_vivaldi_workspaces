@@ -255,3 +255,54 @@ const probeVivaldiWorkspaceBridge = async () => {
     clearVivaldiWorkspaceDiagnostic();
     return true;
 };
+
+// Popup/options historically close individual rows directly via helper.removeTab.
+// Under VW those calls are routed here so stale UI cannot bypass Workspace checks.
+// Outside VW this preserves the existing direct-close behavior.
+// eslint-disable-next-line no-unused-vars
+const closePanelTabs = async (tabIds) => {
+    if (!Array.isArray(tabIds) || tabIds.length === 0
+            || tabIds.some(id => !Number.isInteger(id) || id <= 0)
+            || new Set(tabIds).size !== tabIds.length) {
+        if (options.searchInActiveVivaldiWorkspace)
+            setVivaldiWorkspaceDiagnostic("VW-PANEL-TAB-IDS-INVALID", { operation: "panel-close" });
+        return false;
+    }
+
+    if (!options.searchInActiveVivaldiWorkspace) {
+        try {
+            await Promise.all(tabIds.map(id => removeTab(id)));
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    const tabs = await Promise.all(tabIds.map(id => getTab(id, true)));
+    if (tabs.some(tab => !tab)) {
+        setVivaldiWorkspaceDiagnostic("VW-PANEL-TAB-MISSING", { operation: "panel-close" });
+        return false;
+    }
+    const windowId = tabs[0].windowId;
+    if (!Number.isInteger(windowId) || windowId <= 0 || tabs.some(tab => tab.windowId !== windowId)) {
+        setVivaldiWorkspaceDiagnostic("VW-PANEL-WINDOW-MISMATCH", { operation: "panel-close" });
+        return false;
+    }
+
+    const scoped = await getActiveVivaldiWorkspaceTabs(windowId, tabs, tabs);
+    if (!scoped || scoped.tabs.length !== tabs.length) return false;
+
+    const safe = await revalidateActiveVivaldiWorkspaceTabs(windowId, scoped.workspaceId, tabIds);
+    if (!safe) return false;
+
+    try {
+        await chrome.tabs.remove(tabIds);
+        return true;
+    } catch (error) {
+        setVivaldiWorkspaceDiagnostic("VW-PANEL-CLOSE-FAILED", {
+            operation: "panel-close",
+            lastError: String(error)
+        });
+        return false;
+    }
+};
