@@ -27,7 +27,6 @@
       "urlUtils.js",
       "badge.js",
       "tst.js",
-      "vivaldiWorkspace.js",
       "worker.js",
       "messageListener.js",
       "background.js"
