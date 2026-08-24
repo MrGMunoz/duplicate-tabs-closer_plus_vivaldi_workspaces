@@ -142,16 +142,49 @@ const moveTab = (tabId, moveProperties) => new Promise((resolve, reject) => {
     });
 });
 
-// eslint-disable-next-line no-unused-vars
-const removeTab = (tabId) => new Promise((resolve, reject) => {
-    chrome.tabs.remove(tabId, () => {
-        if (chrome.runtime.lastError) {
-            console.error("removeTab error:", chrome.runtime.lastError.message);
-            reject();
-        }
-        else resolve();
-    });
+let _vivaldiPanelCloseQueue = null;
+
+const isVivaldiWorkspacePanelContext = () =>
+    typeof document !== "undefined" && document.getElementById("scope")?.value === "VW";
+
+const queueVivaldiWorkspacePanelClose = (tabId) => new Promise(resolve => {
+    if (!_vivaldiPanelCloseQueue) {
+        _vivaldiPanelCloseQueue = { tabIds: new Set(), resolvers: [] };
+        Promise.resolve().then(async () => {
+            const queue = _vivaldiPanelCloseQueue;
+            _vivaldiPanelCloseQueue = null;
+            let result;
+            try {
+                result = await sendMessage("closePanelTabs", { tabIds: Array.from(queue.tabIds) });
+            } catch (_) {
+                result = undefined;
+            }
+            queue.resolvers.forEach(done => done(result));
+        });
+    }
+    _vivaldiPanelCloseQueue.tabIds.add(tabId);
+    _vivaldiPanelCloseQueue.resolvers.push(resolve);
 });
+
+// eslint-disable-next-line no-unused-vars
+const removeTab = (tabId) => {
+    // Popup/options row and group close buttons historically call removeTab directly.
+    // Under VW, batch those synchronous calls and route them through the background
+    // Workspace guard so a stale panel cannot bypass fail-closed revalidation.
+    if (isVivaldiWorkspacePanelContext()) {
+        if (!Number.isInteger(tabId) || tabId <= 0) return Promise.resolve(undefined);
+        return queueVivaldiWorkspacePanelClose(tabId);
+    }
+    return new Promise((resolve, reject) => {
+        chrome.tabs.remove(tabId, () => {
+            if (chrome.runtime.lastError) {
+                console.error("removeTab error:", chrome.runtime.lastError.message);
+                reject();
+            }
+            else resolve();
+        });
+    });
+};
 
 // eslint-disable-next-line no-unused-vars
 const setIcon = (details) => new Promise((resolve) => {
@@ -196,7 +229,7 @@ const setTabBadgeBackgroundColor = (tabId, color) => new Promise((resolve) => {
 });
 
 // eslint-disable-next-line no-unused-vars
-const setWindowBadgeBackgroundColor = (windowId, color) => browser.action.setBadgeBackgroundColor({ windowId: windowId, color: color }).catch(() => {});
+const setWindowBadgeBackgroundColor = (windowId, color) => browser.action.setBadgeBackgroundColor({ windowId: windowId, text: text }).catch(() => {});
 
 // eslint-disable-next-line no-unused-vars
 const getStoredOptions = () => Promise.all([
