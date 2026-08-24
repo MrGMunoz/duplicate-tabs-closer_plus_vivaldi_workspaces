@@ -216,6 +216,7 @@ const setOptions = (storedOptions) => {
     options.caseInsensitive = storedOptions.caseInsensitive.value;
     options.searchInAllWindows = storedOptions.scope.value === "A" || storedOptions.scope.value === "CA";
     options.searchPerContainer = storedOptions.scope.value === "CC" || storedOptions.scope.value === "CA";
+    options.searchInActiveVivaldiWorkspace = storedOptions.scope.value === "VW";
     options.prioritizeActiveWindow = storedOptions.prioritizeActiveWindow.value;
     options.whiteList = whiteListToPattern(storedOptions.whiteList.value);
     options.urlRegexRules = parsePatternRules(storedOptions.urlRegexRules.value);

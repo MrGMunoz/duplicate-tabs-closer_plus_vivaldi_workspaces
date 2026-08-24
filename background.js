@@ -2,7 +2,7 @@
 
 // Chrome MV3 service worker only — Firefox loads scripts via manifest background.scripts
 if (typeof importScripts === "function") {
-	importScripts("helper.js", "tabsInfo.js", "options.js", "urlUtils.js", "badge.js", "tst.js", "worker.js", "messageListener.js");
+	importScripts("helper.js", "tabsInfo.js", "options.js", "urlUtils.js", "badge.js", "tst.js", "vivaldiWorkspace.js", "worker.js", "messageListener.js");
 }
 
 let initPromise = null;
@@ -229,6 +229,7 @@ const onDetachedTab = async (detachedTabId, detachInfo) => {
 const onActivatedTab = async (activeInfo) => {
 	await ensureInitialized();
 	if (environment.isFirefox) return;
+	if (!monitoringPaused && options.searchInActiveVivaldiWorkspace) refreshDuplicateTabsInfo(activeInfo.windowId);
 	setBadge(activeInfo.windowId, activeInfo.tabId);
 };
 

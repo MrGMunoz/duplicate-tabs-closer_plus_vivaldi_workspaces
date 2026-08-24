@@ -103,7 +103,6 @@ const getActiveWindowTabId = (observedTab, openedTab, activeWindowId, retainedTa
     return retainedTabId;
 };
 
-
 const getCloseInfo = (details) => {
     const observedTab = details.observedTab;
     const observedTabUrl = details.observedTabUrl || observedTab.url;
@@ -169,7 +168,17 @@ const searchForDuplicateTabsToClose = async (observedTab, queryComplete, loading
     }
     queryInfo.windowId = options.searchInAllWindows ? null : observedWindowsId;
     if (environment.isFirefox) queryInfo.cookieStoreId = options.searchPerContainer ? observedTab.cookieStoreId : null;
-    const openedTabs = await getTabs(queryInfo);
+    let openedTabs = await getTabs(queryInfo);
+    let workspaceGuard = null;
+    if (options.searchInActiveVivaldiWorkspace) {
+        const scopedResult = await getActiveVivaldiWorkspaceTabs(observedWindowsId, openedTabs);
+        if (!scopedResult || !scopedResult.tabs.some(tab => tab.id === observedTab.id)) return;
+        openedTabs = scopedResult.tabs;
+        workspaceGuard = {
+            windowId: observedWindowsId,
+            workspaceId: scopedResult.workspaceId
+        };
+    }
     restoreDiscardedUrls(openedTabs);
     if (!openedTabs || openedTabs.length <= 1) {
         return;
@@ -189,7 +198,12 @@ const searchForDuplicateTabsToClose = async (observedTab, queryComplete, loading
             || (isTabComplete(openedTab) && isTabComplete(observedTab) && matchByTitlePattern(openedTab.title, observedTab.title))) {
             match = true;
             const [tabToCloseId, remainingTabInfo] = getCloseInfo({ observedTab: observedTab, observedTabUrl: observedTabUrl, openedTab: openedTab, activeWindowId: activeWindowId });
-            closeDuplicateTab(tabToCloseId, remainingTabInfo);
+            if (workspaceGuard) {
+                const closed = await closeDuplicateTab(tabToCloseId, remainingTabInfo, workspaceGuard);
+                if (!closed) return;
+            } else {
+                closeDuplicateTab(tabToCloseId, remainingTabInfo);
+            }
             if (remainingTabInfo.observedTabClosed) break;
         }
     }
@@ -204,26 +218,35 @@ const searchForDuplicateTabsToClose = async (observedTab, queryComplete, loading
     }
 };
 
-const closeDuplicateTab = async (tabToCloseId, remainingTabInfo) => {
+const closeDuplicateTab = async (tabToCloseId, remainingTabInfo, workspaceGuard = null) => {
+    if (workspaceGuard) {
+        const safe = await revalidateActiveVivaldiWorkspaceTabs(
+            workspaceGuard.windowId,
+            workspaceGuard.workspaceId,
+            [tabToCloseId, remainingTabInfo.tabId]
+        );
+        if (!safe) return false;
+    }
     try {
         tabsInfo.setClosingTab(tabToCloseId, true);
         if (environment.isFirefox && !(await expandTSTTabIfCollapsed(tabToCloseId))) {
             tabsInfo.setClosingTab(tabToCloseId, false);
             refreshDuplicateTabsInfo(remainingTabInfo.windowId);
-            return;
+            return false;
         }
         await removeTab(tabToCloseId);
     }
     catch (ex) {
         tabsInfo.setClosingTab(tabToCloseId, false);
-        return;
+        return false;
     }
     if (await tabExists(tabToCloseId)) {
         tabsInfo.setClosingTab(tabToCloseId, false);
         refreshDuplicateTabsInfo(remainingTabInfo.windowId);
-        return;
+        return false;
     }
     handleRemainingTab(remainingTabInfo.windowId, remainingTabInfo);
+    return true;
 };
 
 const _handleRemainingTab = async (windowId, details) => {
@@ -361,11 +384,32 @@ const findFuzzyTitleKey = (title, retainedTabs) => {
     return null;
 };
 
+const createEmptyDuplicateSearchResult = (activeWindowId) => ({
+    duplicateTabsGroups: new Map(),
+    retainedTabs: new Map(),
+    activeWindowId: activeWindowId
+});
+
 // eslint-disable-next-line no-unused-vars
 const searchForDuplicateTabs = async (windowId, closeTabs, skipWhitelisted = true) => {
     const queryInfo = { windowType: "normal" };
     if (!options.searchInAllWindows) queryInfo.windowId = windowId;
-    const [activeWindowId, openedTabs] = await Promise.all([getActiveWindowId(), getTabs(queryInfo)]);
+    const [activeWindowId, queriedTabs] = await Promise.all([getActiveWindowId(), getTabs(queryInfo)]);
+    let openedTabs = queriedTabs;
+    let workspaceGuard = null;
+    if (options.searchInActiveVivaldiWorkspace) {
+        const scopedResult = await getActiveVivaldiWorkspaceTabs(windowId, openedTabs);
+        if (!scopedResult) {
+            if (closeTabs) return;
+            return createEmptyDuplicateSearchResult(activeWindowId);
+        }
+        openedTabs = scopedResult.tabs;
+        workspaceGuard = {
+            windowId: windowId,
+            workspaceId: scopedResult.workspaceId,
+            tabIds: openedTabs.map(tab => tab.id)
+        };
+    }
     restoreDiscardedUrls(openedTabs);
     if (!openedTabs) return;
     const duplicateTabsGroups = new Map();
@@ -389,6 +433,14 @@ const searchForDuplicateTabs = async (windowId, closeTabs, skipWhitelisted = tru
     }
     if (closeTabs) {
         if (tabsToClose.size > 0) {
+            if (workspaceGuard) {
+                const safe = await revalidateActiveVivaldiWorkspaceTabs(
+                    workspaceGuard.windowId,
+                    workspaceGuard.workspaceId,
+                    workspaceGuard.tabIds
+                );
+                if (!safe) return;
+            }
             tabsToClose.forEach(tabId => tabsInfo.setClosingTab(tabId, true));
             let safeToClose = Array.from(tabsToClose);
             if (environment.isFirefox) {

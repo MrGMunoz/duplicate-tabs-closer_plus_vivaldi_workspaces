@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "Duplicate Tabs Closer",
   "version": "4.2.9",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAybdlITos/08JW9aaObB9V/HYOZkjHyEtB08IkLktycLbkDaEMZt750+cA1eMu21lzz2CZyGQhY7q+SVlwx7uEvBf59VkqzSzbEJdYMaL2YTh0XbhijYSCf3qYUMzKPiwe5ZSXw+JEYZblv+DbCXLLlOhM+obD4XmkEc2CPbfB2CxN9XLC0diz4NXMYS1Uw6Tnw4a+p10coN6hPFepVdXoX8T9JZV97dOSncO1O9A4ZdrujLm2TsuqDrqefDTFEFYexTZWT9Ikn23/52BHFA2CogTkZPbXVLFLqKDgrmKbeo3lG2XLd1refOF9uz70DVYqDyqoU+m3bxZAHUViH9xyQIDAQAB",
   "author": "Peuj",
   "default_locale": "en",
   "description": "Duplicate Tabs Closer",
