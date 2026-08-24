@@ -8,6 +8,7 @@ options.js
 README.md
 tabsInfo.js
 urlUtils.js
+vivaldiWorkspace.js
 worker.js
 _locales
 ext_lib
