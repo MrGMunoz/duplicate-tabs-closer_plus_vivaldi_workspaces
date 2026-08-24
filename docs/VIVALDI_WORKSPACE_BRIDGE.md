@@ -102,13 +102,41 @@ and temporarily installing an in-memory message listener in the Vivaldi UI conso
 
 That experiment successfully returned real Workspace IDs to Duplicate Tabs Closer.
 
-The repository now contains the persistent Bridge source at:
+The repository contains the persistent Bridge source at:
 
 `vivaldi-bridge/dtc-vivaldi-workspace-bridge.js`
 
-However, the exact persistent JavaScript-mod installation procedure must be tested end-to-end on the maintainer's Vivaldi installation during ETAPA 4 before this document is changed to claim installation is complete or stable.
+### Latest checkpoint
 
-Do not instruct the maintainer to modify Vivaldi application files based only on an untested assumption. When ETAPA 4 begins, provide click-by-click / file-by-file instructions, explain how to back up any file that may be edited, and verify the Bridge after restart.
+ETAPA 4A was confirmed complete: the Chromium build succeeded, the unpacked fork loaded in Vivaldi, and the stable extension ID was verified as `jkhljmjemfaeoklndkcnehbcnmfjcfam`.
+
+ETAPA 4B persistent-install instructions were delivered, but **the repository does not yet know whether the maintainer executed them**. The previous conversation was a temporary chat and may have ended when Vivaldi was closed.
+
+Therefore a future agent must not assume that `window.html` was edited, that the Bridge file was copied, that Vivaldi was restarted, or that `Active Vivaldi Workspace` appeared in the UI.
+
+The next chat should first establish whether ETAPA 4B was not started, succeeded, failed, or is uncertain.
+
+### Procedure that was already given
+
+The intended installation procedure is:
+
+1. Find the current Vivaldi installation's `resources\vivaldi` directory and verify `window.html` exists.
+2. Back up `window.html` as `window.html.dtc-backup`.
+3. Create `resources\vivaldi\dtc-mods`.
+4. Copy `vivaldi-bridge/dtc-vivaldi-workspace-bridge.js` to that folder.
+5. Fully close Vivaldi.
+6. Add this exact line immediately before `</body>` in `window.html`:
+
+```html
+<script src="dtc-mods/dtc-vivaldi-workspace-bridge.js"></script>
+```
+
+7. Save and reopen Vivaldi.
+8. Keep `On duplicate tab detected = Do nothing`.
+9. Verify `Active Vivaldi Workspace` appears in Scope.
+10. Select it only while still in `Do nothing` mode and verify no Bridge-unavailable diagnostic appears.
+
+Do not proceed to closing real duplicate tabs until this persistent installation is positively verified.
 
 ## Update behavior
 
