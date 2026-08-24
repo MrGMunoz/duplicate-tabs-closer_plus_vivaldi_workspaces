@@ -29,6 +29,13 @@ const handleMessage = (message, sender, response) => {
             response({});
             break;
         }
+        case "closePanelTabs": {
+            if (!message.data) return response({ closed: false });
+            closePanelTabs(message.data.tabIds)
+                .then(closed => response({ closed: closed }))
+                .catch(() => response({ closed: false }));
+            return true;
+        }
         case "toggleMonitorPause": {
             toggleMonitorPause().then(() => response({ paused: monitoringPaused })).catch(() => response({}));
             return true;
