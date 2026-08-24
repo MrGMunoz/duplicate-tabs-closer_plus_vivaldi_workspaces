@@ -15,7 +15,11 @@ Completed stages:
 - ETAPA 0 — preparation and fork verification: complete
 - ETAPA 1 — read-only audit and feasibility study: complete
 - ETAPA 2 — architecture research/design: complete
-- ETAPA 3 — implementation: in progress
+- ETAPA 3 — implementation/review pass: complete; browser validation is next
+
+Next stage:
+
+- ETAPA 4 — build, install the unpacked fork, install the Vivaldi UI Bridge, and verify the connection on the maintainer's real Vivaldi installation
 
 Do not merge, release, publish, or open an upstream PR without explicit maintainer approval.
 
@@ -91,34 +95,38 @@ When `VW` is selected:
 
 Any failure must result in zero closes. Never fall back to Active Window or another scope.
 
-## Implementation currently present on the branch
+The auto-navigation path separately validates the observed tab even if Chromium's URL-filtered candidate query temporarily omits that tab during navigation. This fixes the conservative navigation race found during code review without broadening the candidate set.
 
-Commits created so far:
+Popup/options direct row and group close actions are also guarded in `VW`: synchronous row/group `removeTab` calls are batched and routed back to an internal-only background message, then Workspace membership is revalidated before removal. Outside `VW`, the historical direct-close behavior remains unchanged.
 
-1. `d09b00e16482853c909d382a4dc5fc6aacc345ae` — Add fail-closed Vivaldi Workspace bridge core
-2. `54a301cc8349a5fec9feca62b3a74ceb56c4d458` — Show Vivaldi Workspace scope only with bridge
-3. `9f8635f6804378d84b17049701cb2a85dfcce423` — Add Vivaldi Workspace diagnostics and copyable errors
+## Implementation present on the branch
 
-Current implementation files include:
+Main implementation files:
 
-- `vivaldiWorkspace.js` — extension-side Bridge client and validation
-- `vivaldi-bridge/dtc-vivaldi-workspace-bridge.js` — Vivaldi UI Bridge
-- `worker.js` — Workspace filtering and pre-close revalidation
-- `panelHelper.js` — dynamic `VW` scope availability/error UI
-- `manifest-c.json` — stable extension ID material
-- `manifest-f.json` / `background.js` — load the new helper without changing Firefox scope behavior
+- `vivaldiWorkspace.js` — extension-side Bridge client, response validation, fail-closed diagnostics, navigation-required-tab validation, and guarded panel close handling
+- `vivaldi-bridge/dtc-vivaldi-workspace-bridge.js` — read-only Vivaldi UI Bridge
+- `worker.js` — Workspace filtering and immediate pre-close revalidation for automatic and manual/batch paths
+- `helper.js` — batches direct panel row/group close calls only when `VW` is selected
+- `messageListener.js` — internal-only route for guarded panel closes
+- `panelHelper.js` — dynamic `VW` scope availability/error UI and Copy diagnostics
+- `options.js` — one-line `VW` state mapping
+- `background.js` — loads the Chromium Workspace helper and refreshes Workspace data on Chromium tab activation
+- `manifest-c.json` — stable extension ID public key material
+- `build/build.ps1` and `build/list.txt` — include `vivaldiWorkspace.js` in Chromium build inputs
+
+`manifest-f.json` was restored to its upstream content. Firefox does not load the Vivaldi-specific helper and no Firefox manifest behavior is changed.
 
 The Bridge accepts only the stable ID assigned to this fork:
 
 `jkhljmjemfaeoklndkcnehbcnmfjcfam`
 
-The manifest contains only the public key material required to derive this stable ID. Never commit or request the corresponding private key.
+The manifest contains only the public key material required to derive this stable ID. Never commit or request a corresponding private key.
 
 ## Diagnostics
 
 The maintainer requested that Workspace failures be visible and easy to report.
 
-The implementation now records a sanitized diagnostic in `chrome.storage.session` and logs a `DTC-VW-DIAGNOSTIC` warning. Diagnostic objects contain no tab URLs.
+The implementation records a sanitized diagnostic in `chrome.storage.session` and logs a `DTC-VW-DIAGNOSTIC` warning. Diagnostic objects contain no tab URLs or browsing history.
 
 Representative error codes include:
 
@@ -130,40 +138,40 @@ Representative error codes include:
 - `VW-WINDOW-MISMATCH`
 - `VW-ACTIVE-WORKSPACE-INVALID`
 - `VW-TAB-WORKSPACE-INVALID`
+- `VW-REQUIRED-TAB-OUTSIDE-ACTIVE-WORKSPACE`
 - `VW-WORKSPACE-CHANGED`
 - `VW-TAB-MOVED-WORKSPACE`
+- `VW-PANEL-TAB-MISSING`
+- `VW-PANEL-WINDOW-MISMATCH`
+- `VW-PANEL-CLOSE-FAILED`
 
-When `VW` is selected and an error exists, popup/options should show a short fail-closed message and a control for copying diagnostic JSON.
+When `VW` is selected and an error exists, popup/options should show a short fail-closed message and a **Copy diagnostics** control.
 
-## Important known issues to resolve before ETAPA 4
+## Build state
 
-### 1. Auto-navigation candidate race
+The Chromium PowerShell build uses its own `$SingleFiles` list, not only `build/list.txt`. Both build inputs now include `vivaldiWorkspace.js`.
 
-In the automatic path, `chrome.tabs.query()` can be URL-filtered while a tab is still navigating. The observed tab may temporarily be absent from that candidate result. The current first implementation requires the observed tab to appear in the Workspace-filtered result, so this can conservatively suppress a valid close.
+The build script copies `manifest-c.json` to a temporary `manifest.json`, strips the development-only `externally_connectable` key from the packaged Chrome build, and creates `duplicate-tabs-closer-chrome.zip`.
 
-This is fail-safe, not unsafe: it produces zero closes rather than a wrong close. It should still be fixed before browser testing so valid auto-close behavior is not unnecessarily missed.
+ETAPA 4 must verify the generated package and then extract it to a folder for Vivaldi's **Load unpacked** flow.
 
-Preferred fix: explicitly include the observed tab ID in the Workspace metadata request even when the URL-filtered candidate query omits it, while preserving the candidate set used for duplicate comparison.
+## Remaining validation / limitations
 
-### 2. `options.js` line-ending noise
-
-The functional change to `options.js` is only the `VW` state mapping, but an early commit normalized CRLF to LF, causing GitHub to display hundreds of false changed lines.
-
-This should be cleaned before final review so the diff reflects the minimal delta. Do not rewrite unrelated options logic.
-
-### 3. Persistent Bridge installation is not yet validated
+### Persistent Bridge installation
 
 The Bridge has been proven through the Vivaldi UI DevTools console, but persistent installation as a Vivaldi UI JavaScript mod has not yet been tested on the maintainer's machine.
 
-Do not claim the installation procedure is final until ETAPA 4 verifies it end-to-end.
+Current Vivaldi modding guidance still injects JavaScript through `window.html` inside Vivaldi's `resources/vivaldi` UI directory. Browser updates can overwrite that modification. ETAPA 4 must back up the original UI file, install the Bridge conservatively, restart Vivaldi, and verify the Bridge before enabling `VW`.
 
-### 4. Localization
+If the persistent Bridge does not load, the feature must remain fail-closed and the diagnostic should be copied back to the development chat.
 
-The `VW` UI currently includes safe English fallback text. Proper locale messages still need to be added with minimal churn.
+### Localization
 
-### 5. Static/runtime validation
+The `VW` UI currently has safe English fallback strings. Proper locale messages can be added after runtime behavior is validated, with minimal localization churn.
 
-No full automated test suite exists upstream. Syntax/static checks, build checks, and extensive real-browser manual tests are still required.
+### Automated validation
+
+Upstream has no real npm automated test suite. No claim of full regression safety should be made before build/runtime testing. ETAPA 4/5 must verify behavior in the real browser, including fail-closed scenarios.
 
 ## Existing upstream behavior that must remain unchanged
 
@@ -206,6 +214,8 @@ The agreed real tests include:
 - race during close
 - startup/session restore/lazy loading
 - Vivaldi internal pages
+- direct row close under `VW`
+- grouped row close under `VW`
 
 ## Documentation requirement from maintainer
 
