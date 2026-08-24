@@ -160,6 +160,15 @@ const updatePrioritizeActiveWindowState = (scopeValue) => {
 
 const VIVALDI_UI_RUNTIME_ID_FOR_SCOPE_UI = "mpognobbkildjkofajifpdfhcoklimli";
 const VIVALDI_WORKSPACE_SCOPE_PROTOCOL_FOR_UI = 1;
+const VIVALDI_WORKSPACE_DIAGNOSTIC_KEY_FOR_UI = "vivaldiWorkspaceDiagnostic";
+
+const createPanelDiagnostic = (code, details = {}) => ({
+    code: code,
+    at: new Date().toISOString(),
+    protocolVersion: VIVALDI_WORKSPACE_SCOPE_PROTOCOL_FOR_UI,
+    extensionVersion: chrome.runtime.getManifest().version,
+    details: details
+});
 
 const probeVivaldiWorkspaceBridgeFromPanel = () => new Promise(resolve => {
     const requestId = `dtc-vw-ui-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -170,7 +179,10 @@ const probeVivaldiWorkspaceBridgeFromPanel = () => new Promise(resolve => {
         clearTimeout(timerId);
         resolve(value);
     };
-    const timerId = setTimeout(() => finish(false), 1000);
+    const timerId = setTimeout(() => finish({
+        available: false,
+        diagnostic: createPanelDiagnostic("VW-BRIDGE-TIMEOUT", { operation: "ui-ping" })
+    }), 1000);
     try {
         chrome.runtime.sendMessage(
             VIVALDI_UI_RUNTIME_ID_FOR_SCOPE_UI,
@@ -180,17 +192,59 @@ const probeVivaldiWorkspaceBridgeFromPanel = () => new Promise(resolve => {
                 requestId: requestId
             },
             response => {
-                if (chrome.runtime.lastError) return finish(false);
-                finish(!!response
+                if (chrome.runtime.lastError) {
+                    finish({
+                        available: false,
+                        diagnostic: createPanelDiagnostic("VW-BRIDGE-UNREACHABLE", {
+                            operation: "ui-ping",
+                            lastError: (chrome.runtime.lastError.message || "runtime error").slice(0, 240)
+                        })
+                    });
+                    return;
+                }
+                const valid = !!response
                     && response.ok === true
                     && response.protocolVersion === VIVALDI_WORKSPACE_SCOPE_PROTOCOL_FOR_UI
-                    && response.requestId === requestId);
+                    && response.requestId === requestId;
+                finish({
+                    available: valid,
+                    diagnostic: valid ? null : createPanelDiagnostic("VW-PING-INVALID", {
+                        operation: "ui-ping",
+                        reason: (response?.reason || "invalid response").slice(0, 240)
+                    })
+                });
             }
         );
-    } catch (_) {
-        finish(false);
+    } catch (error) {
+        finish({
+            available: false,
+            diagnostic: createPanelDiagnostic("VW-BRIDGE-EXCEPTION", {
+                operation: "ui-ping",
+                lastError: String(error).slice(0, 240)
+            })
+        });
     }
 });
+
+const copyVivaldiWorkspaceDiagnostic = async (diagnostic, button) => {
+    const text = JSON.stringify(diagnostic, null, 2);
+    try {
+        await navigator.clipboard.writeText(text);
+    } catch (_) {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        textarea.remove();
+    }
+    const original = button.textContent;
+    button.textContent = chrome.i18n.getMessage("vivaldiWorkspaceDiagnosticsCopied") || "Copied";
+    setTimeout(() => { button.textContent = original; }, 1500);
+};
 
 const initializeVivaldiWorkspaceScopeUi = async () => {
     const scopeSelect = document.getElementById("scope");
@@ -208,31 +262,62 @@ const initializeVivaldiWorkspaceScopeUi = async () => {
 
     let status = document.getElementById("vivaldiWorkspaceBridgeStatus");
     if (!status) {
-        status = document.createElement("small");
+        status = document.createElement("div");
         status.id = "vivaldiWorkspaceBridgeStatus";
         status.className = "form-text text-muted hidden";
-        status.textContent = chrome.i18n.getMessage("vivaldiWorkspaceBridgeUnavailable")
-            || "Vivaldi Workspace Bridge unavailable; no tabs will be closed in this scope.";
+        const message = document.createElement("span");
+        message.className = "vivaldi-workspace-error-message";
+        const copyButton = document.createElement("button");
+        copyButton.type = "button";
+        copyButton.className = "btn btn-link btn-sm p-0 ms-1";
+        copyButton.textContent = chrome.i18n.getMessage("copyVivaldiWorkspaceDiagnostics") || "Copy diagnostics";
+        status.append(message, document.createTextNode(" "), copyButton);
         scopeSelect.insertAdjacentElement("afterend", status);
     }
 
+    const message = status.querySelector(".vivaldi-workspace-error-message");
+    const copyButton = status.querySelector("button");
+    let currentDiagnostic = null;
     let storedScope = scopeSelect.value;
     try {
         const response = await sendMessage("getStoredOptions");
         storedScope = response?.data?.storedOptions?.scope?.value ?? storedScope;
     } catch (_) {}
 
-    const available = await probeVivaldiWorkspaceBridgeFromPanel();
-    const applyState = (scopeValue) => {
-        const selected = scopeValue === "VW";
-        workspaceOption.disabled = !available;
-        workspaceOption.classList.toggle("hidden", !available && !selected);
-        status.classList.toggle("hidden", available || !selected);
+    const probe = await probeVivaldiWorkspaceBridgeFromPanel();
+    const readStoredDiagnostic = async () => {
+        try {
+            const data = await chrome.storage.session.get(VIVALDI_WORKSPACE_DIAGNOSTIC_KEY_FOR_UI);
+            return data[VIVALDI_WORKSPACE_DIAGNOSTIC_KEY_FOR_UI] || null;
+        } catch (_) {
+            return null;
+        }
+    };
+
+    const renderState = async () => {
+        const selected = scopeSelect.value === "VW";
+        const storedDiagnostic = await readStoredDiagnostic();
+        currentDiagnostic = storedDiagnostic || (!probe.available ? probe.diagnostic : null);
+        workspaceOption.disabled = !probe.available;
+        workspaceOption.classList.toggle("hidden", !probe.available && !selected);
+        const showError = selected && !!currentDiagnostic;
+        status.classList.toggle("hidden", !showError);
+        if (showError && message) {
+            const prefix = chrome.i18n.getMessage("vivaldiWorkspaceError") || "Vivaldi Workspace error";
+            message.textContent = `${prefix}: ${currentDiagnostic.code}. ${chrome.i18n.getMessage("vivaldiWorkspaceFailClosed") || "No tabs will be closed."}`;
+        }
     };
 
     if (storedScope === "VW") workspaceOption.selected = true;
-    applyState(storedScope);
-    scopeSelect.addEventListener("change", () => applyState(scopeSelect.value));
+    await renderState();
+
+    scopeSelect.addEventListener("change", renderState);
+    if (copyButton) copyButton.addEventListener("click", () => {
+        if (currentDiagnostic) copyVivaldiWorkspaceDiagnostic(currentDiagnostic, copyButton);
+    });
+    chrome.storage.session.onChanged.addListener(changes => {
+        if (Object.prototype.hasOwnProperty.call(changes, VIVALDI_WORKSPACE_DIAGNOSTIC_KEY_FOR_UI)) renderState();
+    });
 };
 
 // eslint-disable-next-line no-unused-vars

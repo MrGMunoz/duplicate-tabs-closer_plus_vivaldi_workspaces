@@ -2,10 +2,37 @@
 
 // Vivaldi exposes Workspace metadata only inside its own UI extension.
 // The companion bridge is deliberately read-only. Any missing, malformed or
-// inconsistent response fails closed: the caller receives null/false.
+// inconsistent response fails closed: callers receive null/false and no tab is closed.
 const VIVALDI_UI_RUNTIME_ID = "mpognobbkildjkofajifpdfhcoklimli";
 const VIVALDI_WORKSPACE_BRIDGE_PROTOCOL = 1;
 const VIVALDI_WORKSPACE_BRIDGE_TIMEOUT_MS = 1000;
+const VIVALDI_WORKSPACE_DIAGNOSTIC_KEY = "vivaldiWorkspaceDiagnostic";
+
+const sanitizeVivaldiDiagnosticValue = value => {
+    if (typeof value === "number" || typeof value === "boolean" || value === null) return value;
+    if (typeof value === "string") return value.slice(0, 240);
+    return undefined;
+};
+
+const setVivaldiWorkspaceDiagnostic = (code, details = {}) => {
+    const safeDetails = {};
+    for (const [key, value] of Object.entries(details)) {
+        const safeValue = sanitizeVivaldiDiagnosticValue(value);
+        if (safeValue !== undefined) safeDetails[key] = safeValue;
+    }
+    const diagnostic = {
+        code: code,
+        at: new Date().toISOString(),
+        protocolVersion: VIVALDI_WORKSPACE_BRIDGE_PROTOCOL,
+        extensionVersion: chrome.runtime.getManifest().version,
+        details: safeDetails
+    };
+    console.warn("DTC-VW-DIAGNOSTIC", JSON.stringify(diagnostic));
+    chrome.storage.session.set({ [VIVALDI_WORKSPACE_DIAGNOSTIC_KEY]: diagnostic }).catch(() => {});
+};
+
+const clearVivaldiWorkspaceDiagnostic = () =>
+    chrome.storage.session.remove(VIVALDI_WORKSPACE_DIAGNOSTIC_KEY).catch(() => {});
 
 const isValidVivaldiWorkspaceId = (value) =>
     (typeof value === "number" && Number.isSafeInteger(value) && value >= 0)
@@ -16,46 +43,77 @@ const createVivaldiWorkspaceRequestId = () => {
     return `dtc-vw-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 };
 
-const sendVivaldiWorkspaceBridgeMessage = (message) => new Promise(resolve => {
+const sendVivaldiWorkspaceBridgeMessage = (message, operation) => new Promise(resolve => {
     let settled = false;
-    const finish = (value) => {
+    const finish = result => {
         if (settled) return;
         settled = true;
         clearTimeout(timerId);
-        resolve(value);
+        resolve(result);
     };
-    const timerId = setTimeout(() => finish(null), VIVALDI_WORKSPACE_BRIDGE_TIMEOUT_MS);
+    const timerId = setTimeout(() => finish({
+        response: null,
+        errorCode: "VW-BRIDGE-TIMEOUT",
+        details: { operation: operation }
+    }), VIVALDI_WORKSPACE_BRIDGE_TIMEOUT_MS);
+
     try {
         chrome.runtime.sendMessage(VIVALDI_UI_RUNTIME_ID, message, response => {
             const error = chrome.runtime.lastError;
-            if (error) return finish(null);
-            finish(response ?? null);
+            if (error) {
+                finish({
+                    response: null,
+                    errorCode: "VW-BRIDGE-UNREACHABLE",
+                    details: { operation: operation, lastError: error.message || "runtime error" }
+                });
+                return;
+            }
+            finish({ response: response ?? null, errorCode: null, details: {} });
         });
-    } catch (_) {
-        finish(null);
+    } catch (error) {
+        finish({
+            response: null,
+            errorCode: "VW-BRIDGE-EXCEPTION",
+            details: { operation: operation, lastError: String(error) }
+        });
     }
 });
 
-const validateVivaldiWorkspaceBridgeResponse = (response, requestId, windowId, tabIds) => {
-    if (!response || response.ok !== true) return null;
-    if (response.protocolVersion !== VIVALDI_WORKSPACE_BRIDGE_PROTOCOL) return null;
-    if (response.requestId !== requestId) return null;
-    if (response.requestedWindowId !== windowId) return null;
-    if (!Number.isInteger(response.activeTabId) || response.activeTabId <= 0) return null;
-    if (!isValidVivaldiWorkspaceId(response.activeWorkspaceId)) return null;
-    if (!Array.isArray(response.tabs) || response.tabs.length !== tabIds.length) return null;
+const invalidVivaldiWorkspaceResponse = (code, operation, details = {}) => {
+    setVivaldiWorkspaceDiagnostic(code, { operation: operation, ...details });
+    return null;
+};
+
+const validateVivaldiWorkspaceBridgeResponse = (response, requestId, windowId, tabIds, operation) => {
+    if (!response) return invalidVivaldiWorkspaceResponse("VW-RESPONSE-MISSING", operation);
+    if (response.ok !== true) return invalidVivaldiWorkspaceResponse("VW-BRIDGE-REJECTED", operation, { reason: response.reason || "unknown" });
+    if (response.protocolVersion !== VIVALDI_WORKSPACE_BRIDGE_PROTOCOL)
+        return invalidVivaldiWorkspaceResponse("VW-PROTOCOL-MISMATCH", operation, { receivedProtocol: response.protocolVersion });
+    if (response.requestId !== requestId) return invalidVivaldiWorkspaceResponse("VW-REQUEST-MISMATCH", operation);
+    if (response.requestedWindowId !== windowId)
+        return invalidVivaldiWorkspaceResponse("VW-WINDOW-MISMATCH", operation, { requestedWindowId: windowId, receivedWindowId: response.requestedWindowId });
+    if (!Number.isInteger(response.activeTabId) || response.activeTabId <= 0)
+        return invalidVivaldiWorkspaceResponse("VW-ACTIVE-TAB-INVALID", operation);
+    if (!isValidVivaldiWorkspaceId(response.activeWorkspaceId))
+        return invalidVivaldiWorkspaceResponse("VW-ACTIVE-WORKSPACE-INVALID", operation);
+    if (!Array.isArray(response.tabs) || response.tabs.length !== tabIds.length)
+        return invalidVivaldiWorkspaceResponse("VW-TAB-COUNT-MISMATCH", operation, { expectedCount: tabIds.length, receivedCount: Array.isArray(response.tabs) ? response.tabs.length : -1 });
 
     const expectedIds = new Set(tabIds);
     const metadataById = new Map();
     for (const item of response.tabs) {
-        if (!item || !Number.isInteger(item.id) || !expectedIds.has(item.id)) return null;
-        if (metadataById.has(item.id)) return null;
-        if (item.windowId !== windowId) return null;
-        if (!isValidVivaldiWorkspaceId(item.workspaceId)) return null;
+        if (!item || !Number.isInteger(item.id) || !expectedIds.has(item.id))
+            return invalidVivaldiWorkspaceResponse("VW-TAB-ID-MISMATCH", operation);
+        if (metadataById.has(item.id)) return invalidVivaldiWorkspaceResponse("VW-TAB-DUPLICATE-METADATA", operation);
+        if (item.windowId !== windowId)
+            return invalidVivaldiWorkspaceResponse("VW-TAB-WINDOW-MISMATCH", operation, { tabId: item.id, receivedWindowId: item.windowId });
+        if (!isValidVivaldiWorkspaceId(item.workspaceId))
+            return invalidVivaldiWorkspaceResponse("VW-TAB-WORKSPACE-INVALID", operation, { tabId: item.id });
         metadataById.set(item.id, item);
     }
-    if (metadataById.size !== expectedIds.size) return null;
+    if (metadataById.size !== expectedIds.size) return invalidVivaldiWorkspaceResponse("VW-TAB-METADATA-INCOMPLETE", operation);
 
+    clearVivaldiWorkspaceDiagnostic();
     return {
         activeTabId: response.activeTabId,
         activeWorkspaceId: response.activeWorkspaceId,
@@ -63,36 +121,56 @@ const validateVivaldiWorkspaceBridgeResponse = (response, requestId, windowId, t
     };
 };
 
-const requestVivaldiWorkspaceSnapshot = async (windowId, tabIds) => {
-    if (!Number.isInteger(windowId) || windowId <= 0) return null;
-    if (!Array.isArray(tabIds) || tabIds.length === 0) return null;
-    if (tabIds.some(id => !Number.isInteger(id) || id <= 0)) return null;
-    if (new Set(tabIds).size !== tabIds.length) return null;
+const requestVivaldiWorkspaceSnapshot = async (windowId, tabIds, operation = "query") => {
+    if (!Number.isInteger(windowId) || windowId <= 0) {
+        setVivaldiWorkspaceDiagnostic("VW-INPUT-WINDOW-INVALID", { operation: operation, windowId: windowId });
+        return null;
+    }
+    if (!Array.isArray(tabIds) || tabIds.length === 0) {
+        setVivaldiWorkspaceDiagnostic("VW-INPUT-TABS-EMPTY", { operation: operation });
+        return null;
+    }
+    if (tabIds.some(id => !Number.isInteger(id) || id <= 0) || new Set(tabIds).size !== tabIds.length) {
+        setVivaldiWorkspaceDiagnostic("VW-INPUT-TABS-INVALID", { operation: operation, tabCount: tabIds.length });
+        return null;
+    }
 
     const requestId = createVivaldiWorkspaceRequestId();
-    const response = await sendVivaldiWorkspaceBridgeMessage({
+    const transport = await sendVivaldiWorkspaceBridgeMessage({
         action: "DTC_VIVALDI_WORKSPACE_QUERY",
         protocolVersion: VIVALDI_WORKSPACE_BRIDGE_PROTOCOL,
         requestId: requestId,
         windowId: windowId,
         tabIds: tabIds
-    });
-    return validateVivaldiWorkspaceBridgeResponse(response, requestId, windowId, tabIds);
+    }, operation);
+
+    if (transport.errorCode) {
+        setVivaldiWorkspaceDiagnostic(transport.errorCode, transport.details);
+        return null;
+    }
+    return validateVivaldiWorkspaceBridgeResponse(transport.response, requestId, windowId, tabIds, operation);
 };
 
 // eslint-disable-next-line no-unused-vars
 const getActiveVivaldiWorkspaceTabs = async (windowId, tabs) => {
-    if (!Array.isArray(tabs) || tabs.length === 0) return null;
+    if (!Array.isArray(tabs) || tabs.length === 0) {
+        setVivaldiWorkspaceDiagnostic("VW-NO-CANDIDATE-TABS", { operation: "filter" });
+        return null;
+    }
     const tabIds = tabs.map(tab => tab && tab.id);
-    const snapshot = await requestVivaldiWorkspaceSnapshot(windowId, tabIds);
+    const snapshot = await requestVivaldiWorkspaceSnapshot(windowId, tabIds, "filter");
     if (!snapshot) return null;
 
     const scopedTabs = tabs.filter(tab => {
         const metadata = snapshot.metadataById.get(tab.id);
         return metadata && metadata.workspaceId === snapshot.activeWorkspaceId;
     });
-    if (scopedTabs.length === 0) return null;
+    if (scopedTabs.length === 0) {
+        setVivaldiWorkspaceDiagnostic("VW-ACTIVE-WORKSPACE-EMPTY", { operation: "filter" });
+        return null;
+    }
 
+    clearVivaldiWorkspaceDiagnostic();
     return {
         workspaceId: snapshot.activeWorkspaceId,
         activeTabId: snapshot.activeTabId,
@@ -104,26 +182,48 @@ const getActiveVivaldiWorkspaceTabs = async (windowId, tabs) => {
 // in the same active Workspace; otherwise the whole close operation is blocked.
 // eslint-disable-next-line no-unused-vars
 const revalidateActiveVivaldiWorkspaceTabs = async (windowId, workspaceId, tabIds) => {
-    if (!isValidVivaldiWorkspaceId(workspaceId)) return false;
-    const snapshot = await requestVivaldiWorkspaceSnapshot(windowId, tabIds);
-    if (!snapshot || snapshot.activeWorkspaceId !== workspaceId) return false;
+    if (!isValidVivaldiWorkspaceId(workspaceId)) {
+        setVivaldiWorkspaceDiagnostic("VW-REVALIDATE-WORKSPACE-INVALID", { operation: "revalidate" });
+        return false;
+    }
+    const snapshot = await requestVivaldiWorkspaceSnapshot(windowId, tabIds, "revalidate");
+    if (!snapshot) return false;
+    if (snapshot.activeWorkspaceId !== workspaceId) {
+        setVivaldiWorkspaceDiagnostic("VW-WORKSPACE-CHANGED", { operation: "revalidate" });
+        return false;
+    }
     for (const id of tabIds) {
         const metadata = snapshot.metadataById.get(id);
-        if (!metadata || metadata.workspaceId !== workspaceId) return false;
+        if (!metadata || metadata.workspaceId !== workspaceId) {
+            setVivaldiWorkspaceDiagnostic("VW-TAB-MOVED-WORKSPACE", { operation: "revalidate", tabId: id });
+            return false;
+        }
     }
+    clearVivaldiWorkspaceDiagnostic();
     return true;
 };
 
 // eslint-disable-next-line no-unused-vars
 const probeVivaldiWorkspaceBridge = async () => {
     const requestId = createVivaldiWorkspaceRequestId();
-    const response = await sendVivaldiWorkspaceBridgeMessage({
+    const transport = await sendVivaldiWorkspaceBridgeMessage({
         action: "DTC_VIVALDI_WORKSPACE_PING",
         protocolVersion: VIVALDI_WORKSPACE_BRIDGE_PROTOCOL,
         requestId: requestId
-    });
-    return !!response
+    }, "ping");
+    if (transport.errorCode) {
+        setVivaldiWorkspaceDiagnostic(transport.errorCode, transport.details);
+        return false;
+    }
+    const response = transport.response;
+    const valid = !!response
         && response.ok === true
         && response.protocolVersion === VIVALDI_WORKSPACE_BRIDGE_PROTOCOL
         && response.requestId === requestId;
+    if (!valid) {
+        setVivaldiWorkspaceDiagnostic("VW-PING-INVALID", { operation: "ping", reason: response?.reason || "invalid response" });
+        return false;
+    }
+    clearVivaldiWorkspaceDiagnostic();
+    return true;
 };
