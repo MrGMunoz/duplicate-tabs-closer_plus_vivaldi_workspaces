@@ -171,8 +171,8 @@ const searchForDuplicateTabsToClose = async (observedTab, queryComplete, loading
     let openedTabs = await getTabs(queryInfo);
     let workspaceGuard = null;
     if (options.searchInActiveVivaldiWorkspace) {
-        const scopedResult = await getActiveVivaldiWorkspaceTabs(observedWindowsId, openedTabs);
-        if (!scopedResult || !scopedResult.tabs.some(tab => tab.id === observedTab.id)) return;
+        const scopedResult = await getActiveVivaldiWorkspaceTabs(observedWindowsId, openedTabs, [observedTab]);
+        if (!scopedResult) return;
         openedTabs = scopedResult.tabs;
         workspaceGuard = {
             windowId: observedWindowsId,
@@ -180,7 +180,10 @@ const searchForDuplicateTabsToClose = async (observedTab, queryComplete, loading
         };
     }
     restoreDiscardedUrls(openedTabs);
-    if (!openedTabs || openedTabs.length <= 1) {
+    if (!openedTabs) return;
+    if (workspaceGuard) {
+        if (!openedTabs.some(tab => tab.id !== observedTab.id)) return;
+    } else if (openedTabs.length <= 1) {
         return;
     }
     const matchingObservedTabUrl = getMatchingURL(observedTabUrl);
@@ -494,7 +497,7 @@ const getDuplicateTabsForPanel = async (duplicateTabsGroups, retainedTabs) => {
     let groupIndex = 0;
     for (const [key, duplicateTabs] of duplicateTabsGroups) {
         const retainedTab = retainedTabs ? retainedTabs.get(key) : null;
-        const retainedTabId = retainedTab ? retainedTab.id : null;
+        const retainedTabId = retainedTab ? retainedTabs.get(key).id : null;
         await Promise.all(Array.from(duplicateTabs, duplicateTab => setDuplicateTabPanel(duplicateTab, duplicateTabsPanel, groupIndex, retainedTabId)));
         groupIndex++;
     }
