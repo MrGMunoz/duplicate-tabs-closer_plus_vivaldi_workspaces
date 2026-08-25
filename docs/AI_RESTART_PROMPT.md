@@ -56,7 +56,8 @@ Stage status:
 - ETAPA 5G: passed — live Workspace switching and a real A -> B -> A tab movement followed exact Workspace membership, with correct 2/1/3/2 counts, no Bridge warning, no fallback, and zero closes
 - ETAPA 5H-A: passed — deterministic stale-membership race produced `VW-TAB-MOVED-WORKSPACE` and zero DTC closes
 - ETAPA 5H-B: passed — deterministic active-Workspace race produced `VW-WORKSPACE-CHANGED` and zero DTC closes
-- ETAPA 5I: next — regress pre-existing non-VW scope behavior, starting with `Active Window` in Vivaldi
+- ETAPA 5I: passed — pre-existing `Active Window` saw all 4 matching tabs across A+B in one Vivaldi window, closed normally to 1 total, and returning to `VW` restored 2/2 isolation
+- ETAPA 5J: next — regress pre-existing `All Windows` with a second real Vivaldi browser window
 
 Do not enable automatic close yet.
 
@@ -211,33 +212,40 @@ Observed result:
 
 Together, 5H-A and 5H-B deterministically validate both stale-state branches of the final pre-close revalidation guard.
 
-## Exact next action — ETAPA 5I
+### 5I — `Active Window` non-VW regression
 
-Validate regression behavior for the pre-existing non-VW scopes before narrower Workspace edge cases or automatic-close testing.
+Starting from A=2 / B=2 in the same Vivaldi browser window and keeping `On duplicate tab detected = Do nothing`, the maintainer changed only Scope from `Active Vivaldi Workspace` to the pre-existing `Active Window` scope.
 
-Start with `Scope = Active Window` (`C`) in Vivaldi and keep `On duplicate tab detected = Do nothing`. Use the clean A=2 / B=2 layout. Vivaldi Workspaces in the same browser window share one Chromium `windowId`, so the pre-existing upstream `Active Window` scope is expected to see all four matching test tabs across A and B rather than applying Workspace isolation.
+Observed result:
 
-Procedure concept:
+- from Workspace A, DTC detected exactly 4 matching tabs across A+B
+- from Workspace B, DTC still detected exactly 4
+- no Vivaldi Workspace gating error appeared
+- `Close duplicates` exactly once left exactly 1 matching test tab total across A+B
+- the A=2 / B=2 disposable layout was recreated
+- returning to `Active Vivaldi Workspace` restored exactly 2 detected in A and 2 in B, with no Bridge error
 
-1. Change only Scope from `Active Vivaldi Workspace` to `Active Window`.
-2. Confirm DTC detects exactly 4 matching test tabs across the current Vivaldi window.
-3. Switch A/B and confirm the same Active Window result remains; no Vivaldi Workspace diagnostic should be required for this scope.
-4. Press `Close duplicates` exactly once under `Active Window` and require exactly one matching test tab to remain in the whole Vivaldi window, regardless of which Workspace contains the survivor.
-5. Recreate the disposable test layout as A=2 / B=2.
-6. Return to `Scope = Active Vivaldi Workspace` and confirm DTC again detects exactly 2 in each active Workspace with `Do nothing`.
+This is a real-runtime pass showing the legacy Active Window scope is not accidentally filtered or guarded by `VW`.
 
-Expected result: the legacy Active Window scope remains upstream-compatible, deliberately sees across Workspaces in the same Vivaldi window, and closes normally without being routed through the `VW` fail-closed guard.
+## Exact next action — ETAPA 5J
 
-Do not enable automatic close. If Active Window behaves like VW, surfaces a Workspace diagnostic as a gating error, or fails to perform its normal manual close, stop and diagnose before changing code.
+Validate the sibling pre-existing `All Windows` scope (`A`) with a second normal Vivaldi browser window.
+
+Start from the restored A=2 / B=2 layout in the original window, `Scope = Active Vivaldi Workspace`, and `On duplicate tab detected = Do nothing`. Open one second normal Vivaldi window and place exactly one matching test tab there. Then change Scope to `All Windows`.
+
+Expected observation-only result: DTC sees exactly 5 matching test tabs across both browser windows, regardless of which of the two windows opens the DTC popup. This scope must not apply Workspace isolation or require a Vivaldi Workspace diagnostic.
+
+After observation passes, press `Close duplicates` exactly once under `All Windows` and require exactly one matching test tab to remain across both browser windows in total. Recreate A=2 / B=2 in the original window, remove the temporary second-window test setup, return to `Scope = Active Vivaldi Workspace`, and confirm exactly 2 detected in A and 2 in B again.
+
+This test deliberately exercises upstream all-window behavior and real multi-window enumeration. Do not enable automatic close. If All Windows sees only one window, behaves like `VW`, produces a Workspace gating error, or closes an unrelated tab, stop and diagnose before changing code.
 
 ## Remaining required runtime themes
 
 Still to validate substantially include:
 
-- existing non-VW scopes regression (5I next)
+- `All Windows` non-VW regression with a second real window (5J next)
 - discarded/hibernated tabs
-- multiple Workspaces
-- multiple windows
+- broader multiple Workspaces / multiple windows under `VW`
 - startup/session restore/lazy loading
 - default/non-custom Workspace
 - stacks/groups
