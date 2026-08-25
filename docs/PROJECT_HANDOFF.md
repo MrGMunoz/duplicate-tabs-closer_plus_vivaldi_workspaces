@@ -18,11 +18,13 @@ Completed stages:
 - ETAPA 3 — implementation/review pass: complete enough for browser validation
 - ETAPA 4A — Chromium build + unpacked fork load in Vivaldi: **confirmed complete by maintainer**
 - ETAPA 4B — persistent Vivaldi Workspace Bridge installation: **confirmed complete by maintainer**
+- ETAPA 5A — observation-only Active Vivaldi Workspace isolation: **confirmed complete by maintainer**
+- ETAPA 5B — first controlled manual `Close duplicates` under `VW`: **confirmed complete by maintainer**
 
 Current stage:
 
 - ETAPA 5 — real runtime validation: **in progress**
-- ETAPA 5A has exposed two real Vivaldi Bridge compatibility cases: default/non-custom Workspace tabs and wrapped `vivaldi.prefs.get` values. Bridge-only fixes are committed; the latest fix awaits browser re-validation.
+- ETAPA 5C is next: controlled direct-row close under `VW`, still with `On duplicate tab detected = Do nothing`.
 
 Do not merge, release, publish, or open an upstream PR without explicit maintainer approval.
 
@@ -109,9 +111,36 @@ That fix:
 
 The diff was reviewed and is limited to `vivaldi-bridge/dtc-vivaldi-workspace-bridge.js`.
 
-The next manual action is to replace the installed `dtc-mods/dtc-vivaldi-workspace-bridge.js` with the latest repository version containing commit `60a2333e59efea4f2865b46dbb60adade862bc47`, fully restart Vivaldi, keep `Do nothing`, select `VW`, and repeat the ETAPA 5A observation-only test. Expected result: the three A tabs are detected as a group of 3 while the B tab remains excluded and no error/warning appears.
+After installing the Bridge version containing `60a2333e59efea4f2865b46dbb60adade862bc47` and fully restarting Vivaldi, the maintainer repeated ETAPA 5A with the exact same test URL and layout:
 
-Do **not** proceed to real closing tests until that re-test passes.
+- Workspace A: 3 identical test tabs
+- Workspace B: 1 identical test tab
+- active Workspace A
+- `Scope = Active Vivaldi Workspace`
+- `On duplicate tab detected = Do nothing`
+
+ETAPA 5A result:
+
+- Workspace A detected exactly 3
+- Workspace B test tab remained open
+- no Bridge error or warning appeared
+
+Therefore **ETAPA 5A PASSED**.
+
+ETAPA 5B then performed the first real manual close under `VW` using the same four tabs and still with `Do nothing`. With Workspace A active, the maintainer pressed `Close duplicates` once.
+
+ETAPA 5B result:
+
+- before close: DTC detected exactly 3 in Workspace A
+- after close: exactly 1 test tab remained in Workspace A
+- the Workspace B test tab remained open
+- no Bridge error or warning appeared
+
+Therefore **ETAPA 5B PASSED**. This validates the guarded manual batch-close path in this runtime for the tested A/B case.
+
+The next manual action is **ETAPA 5C: controlled direct-row close under `VW`**. Recreate at least two identical test tabs in Workspace A while keeping the matching Workspace B tab, confirm DTC sees only the A duplicates, then close exactly one A row using its row X. Keep `On duplicate tab detected = Do nothing`. The B tab must remain untouched and no error/warning should appear.
+
+Do not enable automatic close yet.
 
 ## ETAPA 4B persistent Bridge procedure
 
@@ -279,22 +308,39 @@ The build script copies `manifest-c.json` to a temporary `manifest.json`, strips
 
 ETAPA 4A confirmed that this build path works on the maintainer's machine and that the unpacked fork loads with the intended stable ID.
 
-The current ETAPA 5 compatibility fixes change only the Vivaldi UI Bridge file, so the already-loaded Chromium extension does not need a rebuild for this re-test. The installed Bridge copy does need to be replaced and Vivaldi fully restarted so the new listener code loads.
+The ETAPA 5 Bridge compatibility fixes change only the Vivaldi UI Bridge file. The installed Bridge containing `60a2333e59efea4f2865b46dbb60adade862bc47` was revalidated successfully in ETAPA 5A; no Chromium extension rebuild was required for that Bridge-only update.
 
 ## Remaining validation / limitations
 
-### ETAPA 5A re-validation
+### ETAPA 5A — passed
 
-After installing the Bridge version containing commit `60a2333e59efea4f2865b46dbb60adade862bc47`, repeat the observation-only A/B test with `Do nothing`:
+Observation-only A/B isolation passed after installing the wrapped-preference Bridge fix:
 
-- Workspace A: 3 tabs with the exact test URL
-- Workspace B: 1 tab with the exact same URL
+- Workspace A: 3 identical test tabs detected
+- Workspace B: matching tab excluded and remained open
+- no Bridge error/warning
+
+### ETAPA 5B — passed
+
+First controlled manual `Close duplicates` under `VW` passed:
+
+- 3 duplicates detected in Workspace A before close
+- exactly 2 closed in A, leaving 1
+- matching Workspace B tab remained open
+- no Bridge error/warning
+
+### ETAPA 5C — next
+
+Test the guarded direct-row close path under `VW` while keeping `Do nothing`:
+
+- recreate at least 2 identical test tabs in Workspace A
+- keep the matching test tab in Workspace B
 - active Workspace A
-- Scope `VW`
+- confirm only A duplicates are listed
+- press exactly one row X for an A tab
+- expect exactly that A tab to close, the other A tab to remain, the B tab to remain, and no error/warning
 
-Expected: DTC lists exactly 3 duplicate tabs from A, not the B tab, and no Bridge error appears.
-
-Do not start real close testing until this passes.
+Do not enable automatic close yet.
 
 ### Localization
 
