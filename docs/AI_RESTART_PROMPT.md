@@ -55,7 +55,8 @@ Stage status:
 - ETAPA 5F: passed — missing Bridge produced explicit `VW-BRIDGE-UNREACHABLE`, zero closes, no fallback, and normal recovery after restoring the Bridge
 - ETAPA 5G: passed — live Workspace switching and a real A -> B -> A tab movement followed exact Workspace membership, with correct 2/1/3/2 counts, no Bridge warning, no fallback, and zero closes
 - ETAPA 5H-A: passed — deterministic stale-membership race produced `VW-TAB-MOVED-WORKSPACE` and zero DTC closes
-- ETAPA 5H-B: next — deterministically change the active Workspace during the guarded close window and require `VW-WORKSPACE-CHANGED` plus zero closes
+- ETAPA 5H-B: passed — deterministic active-Workspace race produced `VW-WORKSPACE-CHANGED` and zero DTC closes
+- ETAPA 5I: next — regress pre-existing non-VW scope behavior, starting with `Active Window` in Vivaldi
 
 Do not enable automatic close yet.
 
@@ -194,39 +195,46 @@ Observed result:
 
 This is a deterministic real-runtime pass of the stale-membership fail-closed branch between the initial Workspace snapshot and the final pre-close revalidation.
 
-## Exact next action — ETAPA 5H-B
+### 5H-B — active Workspace changed during guarded close
 
-Validate the sibling race branch where the **active Workspace changes** between initial validation and final revalidation.
+Starting from the restored A=2 / B=2 layout with `Scope = Active Vivaldi Workspace`, `On duplicate tab detected = Do nothing`, and Workspace A active, the maintainer reused the same breakpoint in `closePanelTabs` immediately before `revalidateActiveVivaldiWorkspaceTabs`.
 
-Reuse the same deterministic breakpoint in `closePanelTabs`, immediately before:
+A grouped close was initiated in A and execution paused at the expected point. While paused, no tab was moved; only the active Workspace was changed from A to B. Execution was then resumed.
 
-`const safe = await revalidateActiveVivaldiWorkspaceTabs(...)`
+Observed result:
 
-Start with A=2 and B=2, `Scope = Active Vivaldi Workspace`, `On duplicate tab detected = Do nothing`, and Workspace A active.
+- diagnostic: `VW-WORKSPACE-CHANGED`
+- DTC closed zero tabs for the affected operation
+- Workspace A remained at 2 test tabs
+- Workspace B remained at 2 test tabs
+- no fallback or cross-Workspace close occurred
+
+Together, 5H-A and 5H-B deterministically validate both stale-state branches of the final pre-close revalidation guard.
+
+## Exact next action — ETAPA 5I
+
+Validate regression behavior for the pre-existing non-VW scopes before narrower Workspace edge cases or automatic-close testing.
+
+Start with `Scope = Active Window` (`C`) in Vivaldi and keep `On duplicate tab detected = Do nothing`. Use the clean A=2 / B=2 layout. Vivaldi Workspaces in the same browser window share one Chromium `windowId`, so the pre-existing upstream `Active Window` scope is expected to see all four matching test tabs across A and B rather than applying Workspace isolation.
 
 Procedure concept:
 
-1. Initiate the grouped close in A and confirm the service worker pauses at the breakpoint.
-2. While paused, do not move any tabs. Switch Vivaldi's active Workspace from A to B.
-3. Resume the service worker.
-4. The original guard refers to A but the fresh Bridge snapshot must report B as active.
+1. Change only Scope from `Active Vivaldi Workspace` to `Active Window`.
+2. Confirm DTC detects exactly 4 matching test tabs across the current Vivaldi window.
+3. Switch A/B and confirm the same Active Window result remains; no Vivaldi Workspace diagnostic should be required for this scope.
+4. Press `Close duplicates` exactly once under `Active Window` and require exactly one matching test tab to remain in the whole Vivaldi window, regardless of which Workspace contains the survivor.
+5. Recreate the disposable test layout as A=2 / B=2.
+6. Return to `Scope = Active Vivaldi Workspace` and confirm DTC again detects exactly 2 in each active Workspace with `Do nothing`.
 
-Expected result:
+Expected result: the legacy Active Window scope remains upstream-compatible, deliberately sees across Workspaces in the same Vivaldi window, and closes normally without being routed through the `VW` fail-closed guard.
 
-- explicit diagnostic `VW-WORKSPACE-CHANGED`
-- zero tabs closed by DTC
-- A remains at 2 test tabs
-- B remains at 2 test tabs
-- no fallback
-
-If the breakpoint does not trigger exactly where expected, stop. Do not enable auto-close, do not edit code, and do not add timing hacks.
+Do not enable automatic close. If Active Window behaves like VW, surfaces a Workspace diagnostic as a gating error, or fails to perform its normal manual close, stop and diagnose before changing code.
 
 ## Remaining required runtime themes
 
 Still to validate substantially include:
 
-- active-Workspace change during close-race revalidation (5H-B next)
-- existing scopes regression
+- existing non-VW scopes regression (5I next)
 - discarded/hibernated tabs
 - multiple Workspaces
 - multiple windows
