@@ -4,11 +4,11 @@ Use this file when handing the project to a new AI/chat session.
 
 ---
 
-You are taking over development of the GitHub fork:
+You are taking over development of:
 
 `MrGMunoz/duplicate-tabs-closer_plus_vivaldi_workspaces`
 
-Upstream is:
+Upstream:
 
 `Peuj/duplicate-tabs-closer`
 
@@ -18,150 +18,150 @@ Your first actions must be:
 2. Read `docs/PROJECT_HANDOFF.md` completely.
 3. Read `docs/VIVALDI_WORKSPACE_BRIDGE.md` completely.
 4. Read this file completely.
-5. Inspect the current branch `feature/vivaldi-workspace-scope` and compare it against `master`.
-6. Do not ask the maintainer to reconstruct the original project prompt; the repository documentation and actual repository state are the source of truth.
+5. Inspect `feature/vivaldi-workspace-scope` and compare it with `master`.
+6. Treat repository docs + actual branch state as source of truth; do not ask the maintainer to reconstruct prior prompts.
 
-Project goal: add scope `VW` = **Active Vivaldi Workspace** to Duplicate Tabs Closer while preserving all existing matching and keep/close behavior.
+Project goal: add `VW` = **Active Vivaldi Workspace** to Duplicate Tabs Closer while preserving existing matching and keep/close behavior.
 
-Critical safety requirement: **fail closed**. Under `VW`, if Workspace identity or membership is missing, malformed, unexpected, timed out, or ambiguous, close zero tabs. Never fall back to Active Window, Current Window, All Windows, `windowId`, `groupId`, tab order, or any other heuristic.
+Critical safety requirement: **FAIL CLOSED**. Under `VW`, any missing, malformed, ambiguous, timed-out, inconsistent, changed, or unexpected Workspace metadata must result in zero closes. Never fall back to Active Window, Current Window, All Windows, `windowId`, `groupId`, tab order, visibility, or heuristics.
 
-Important architectural discovery: a normal Chromium extension in Vivaldi 8.1 cannot read Workspace metadata. A minimal read-only Vivaldi UI Bridge is required. The Bridge can access `vivaldi.tabsPrivate` / Workspace metadata from the Vivaldi UI extension and respond to the fork. The Bridge itself must never close, move, activate, or edit tabs.
+The maintainer is not a programmer. This is AI-assisted/vibe-coded development. Human actions must use the exact manual-action format defined in `AGENTS.md` and must be click-by-click.
 
-The maintainer is not a programmer. This project is developed using AI-assisted development / vibe-coding. When human intervention is required, give exact click-by-click instructions using the manual-action format defined in `AGENTS.md`. Do not assume Git/GitHub/DevTools knowledge.
+## Current checkpoint
 
-## Current checkpoint — read this carefully
+Current branch:
 
-- ETAPA 0: complete.
-- ETAPA 1: complete.
-- ETAPA 2: complete.
-- ETAPA 3: implementation/review pass complete enough for real-browser validation.
-- ETAPA 4A: **confirmed complete by the maintainer**.
-- ETAPA 4B: **confirmed complete by the maintainer**.
-- ETAPA 5: real runtime validation **in progress**.
-- ETAPA 5A: **passed**.
-- ETAPA 5B: **passed**.
-- ETAPA 5C: **next** — controlled direct-row close under `VW` while keeping `On duplicate tab detected = Do nothing`.
+`feature/vivaldi-workspace-scope`
 
-Confirmed ETAPA 4A/4B facts:
+`master` must remain untouched unless the maintainer explicitly approves a later merge.
 
-- Chromium build completed successfully
-- unpacked fork loaded successfully in Vivaldi
-- stable fork extension ID confirmed exactly as `jkhljmjemfaeoklndkcnehbcnmfjcfam`
-- original Duplicate Tabs Closer extension was disabled, not removed
-- persistent Bridge installed under Vivaldi UI resources
-- Vivaldi starts normally with the Bridge installed
-- `Active Vivaldi Workspace` appears in Scope and can be selected
-- `On duplicate tab detected = Do nothing`
-- no Bridge-unavailable warning during ETAPA 4B validation
+Stable fork extension ID:
 
-## ETAPA 5A history and result
+`jkhljmjemfaeoklndkcnehbcnmfjcfam`
 
-Observation-only test URL:
+Stage status:
 
-`https://example.com/?dtc-vw-scope-test=20260824`
+- ETAPA 0: complete
+- ETAPA 1: complete
+- ETAPA 2: complete
+- ETAPA 3: complete enough for runtime validation
+- ETAPA 4A: passed
+- ETAPA 4B: passed
+- ETAPA 5A: passed
+- ETAPA 5B: passed
+- ETAPA 5C: passed
+- ETAPA 5D: passed
+- ETAPA 5E: passed
+- ETAPA 5F: next — deliberately make the installed Vivaldi UI Bridge unavailable and confirm fail-closed zero-close behavior, then restore it
 
-Test layout:
+Do not enable automatic close yet.
 
-- 3 identical tabs in Workspace A
-- 1 identical tab in Workspace B
-- active Workspace A
-- `Scope = Active Vivaldi Workspace`
-- `On duplicate tab detected = Do nothing`
+## Architecture
 
-Normal `Active Window` detected all 4 tabs, proving the upstream duplicate engine works and that Vivaldi Workspaces share a Chromium window.
+A normal Chromium extension in Vivaldi 8.1 cannot safely read Workspace metadata. The implemented architecture is:
 
-Direct Vivaldi UI inspection showed correct Workspace metadata for the four test tabs:
+`fork extension -> read-only Vivaldi UI Bridge -> Vivaldi internal Workspace metadata`
 
-- Workspace A ID: `1786421728088` on 3 test tabs
-- Workspace B ID: `1787604210876` on 1 test tab
+Vivaldi UI runtime ID:
 
-The same Vivaldi window also contained one valid discarded internal tab whose parsed `vivExtData` had no `workspaceId`. This exposed the first Bridge compatibility case: Vivaldi can represent the default/non-custom Workspace by omitting `workspaceId`.
+`mpognobbkildjkofajifpdfhcoklimli`
 
-First Bridge fix:
+The Bridge must remain read-only and may answer only the stable fork extension ID.
+
+## ETAPA 5 compatibility fixes already committed
+
+First runtime issue: valid Vivaldi tabs can have parsed `vivExtData` with no `workspaceId`, representing the default/non-custom Workspace.
+
+Fix:
 
 `d2d509ea7e416d78592b539ae8a81566cf34a355` — `Handle Vivaldi default workspace tabs in bridge`
 
-That change introduced the reserved sentinel `__dtc_vivaldi_default_workspace__` only for valid parsed `vivExtData` with an absent/null `workspaceId`, while preserving fail-closed behavior for malformed/missing metadata.
+This introduced reserved sentinel:
 
-After installing that fix and restarting Vivaldi, ETAPA 5A still returned `NO DUPLICATES`. A direct Bridge query then returned safely:
+`__dtc_vivaldi_default_workspace__`
 
-- `transportError = null`
-- `ok = false`
-- `reason = workspace-list-unavailable`
-- no tab metadata returned
+Only valid parsed `vivExtData` with absent/null `workspaceId` maps to the sentinel. Missing/malformed metadata still fails closed. Sentinel collision and broad API-regression safeguards are present.
 
-A read-only Vivaldi UI probe established the second compatibility case: `vivaldi.prefs.get("vivaldi.workspaces.list")` returned a thenable whose awaited value was an object with keys `defaultValue`, `store`, and `value`; the actual Workspace array was `.value` (observed length `7`). Callback usage returned the same wrapper shape.
+Second runtime issue: `vivaldi.prefs.get("vivaldi.workspaces.list")` can return a wrapper whose `.value` property is the actual Workspace array.
 
-Second Bridge fix:
+Fix:
 
 `60a2333e59efea4f2865b46dbb60adade862bc47` — `Handle wrapped Vivaldi workspace preferences`
 
-That change is intentionally narrow:
+The Bridge accepts only a direct array or an object with an own `.value` array; every other shape fails closed.
 
-- accepts a direct Workspace array, or an object with an own `.value` property that is an array
-- rejects every other preference shape as `null`
-- keeps all Workspace-ID validation unchanged
-- changes only `vivaldi-bridge/dtc-vivaldi-workspace-bridge.js`
-- does not touch `worker.js`, matching, priorities, or closing logic
+## Primary runtime test
 
-After replacing the installed Bridge with that version and fully restarting Vivaldi, ETAPA 5A was repeated with the same 3-in-A / 1-in-B layout.
+Test URL:
 
-ETAPA 5A result:
+`https://example.com/?dtc-vw-scope-test=20260824`
 
-- Workspace A detected exactly 3
-- Workspace B test tab remained open
-- no Bridge error or warning
+Observed custom Workspace IDs during diagnosis:
 
-Therefore **ETAPA 5A PASSED**.
+- A: `1786421728088`
+- B: `1787604210876`
 
-## ETAPA 5B result
+These are evidence only; never hard-code them.
 
-Using the same four tabs, still with `On duplicate tab detected = Do nothing` and `Scope = Active Vivaldi Workspace`, the maintainer pressed `Close duplicates` exactly once while Workspace A was active.
+## Passed ETAPA 5 results
 
-Result:
+### 5A — observation-only isolation
 
-- before close: DTC detected exactly 3 in Workspace A
-- after close: exactly 1 test tab remained in Workspace A
-- the matching Workspace B test tab remained open
-- no Bridge error or warning appeared
+Layout: 3 identical tabs in A, 1 identical tab in B, A active, `Scope = VW`, `On duplicate tab detected = Do nothing`.
 
-Therefore **ETAPA 5B PASSED**. This validates the guarded manual batch-close path for this tested A/B runtime case.
+Result: DTC detected exactly 3 in A; B remained excluded/open; no Bridge warning.
 
-## Exact next action — ETAPA 5C
+### 5B — `Close duplicates`
 
-Test the guarded direct-row close path under `VW`, still with `On duplicate tab detected = Do nothing`.
+With 3 in A and 1 in B, `Close duplicates` once left exactly 1 in A; B remained open; no warning.
 
-Prepare:
+### 5C — row X
 
-- Workspace A: at least 2 identical test tabs using the same test URL
-- Workspace B: keep the matching test tab
-- active Workspace A
-- `Scope = Active Vivaldi Workspace`
-- `On duplicate tab detected = Do nothing`
+With 2 in A and 1 in B, pressing exactly one A row X left 1 in A; B remained open; no warning.
 
-Before closing, confirm DTC lists only the duplicate tabs from Workspace A and no Bridge warning appears.
+### 5D — grouped/group-header X
 
-Then press exactly one row X for one listed Workspace A tab.
+With 2 in A and 1 in B, grouped view showed one group of 2. Pressing the group-header X closed both A tabs; B remained open; no warning.
 
-Expected result:
+### 5E — pinned-tab priority
 
-- exactly that selected A tab closes
-- at least one matching A tab remains
-- the matching Workspace B tab remains open
-- no Bridge error or warning appears
+With 2 identical tabs in A, exactly one pinned, `Keep pinned tab` enabled, and matching B tab present, `Close duplicates` once left exactly the pinned A tab; B remained open; no warning.
 
-Stop after this single direct-row close. Do not press `Close duplicates`, `Close group`, another row X, and do not enable automatic close yet.
+These tests validate manual batch close, row close, grouped close, Workspace isolation, and pinned priority for the tested runtime cases.
 
-If ETAPA 5C fails, preserve fail-closed behavior and inspect diagnostics/runtime state before proposing a code change.
+## Exact next action — ETAPA 5F
 
-Current branch: `feature/vivaldi-workspace-scope`.
+Validate missing-Bridge fail-closed behavior.
 
-`master` must remain untouched unless the maintainer separately approves a merge later.
+Use the installed Bridge at:
 
-Do not merge, release, publish, open an upstream PR, force-push, delete remote branches, make an official version bump, add a major dependency, create/change tags, or make another major architecture change without explicit maintainer approval.
+`resources\vivaldi\dtc-mods\dtc-vivaldi-workspace-bridge.js`
 
-When a Workspace-related error occurs, preserve fail-closed behavior and provide a short, copyable diagnostic JSON. Do not include browsing URLs in diagnostics.
+Procedure concept:
 
-Continue from the repository state you actually observe, not from assumptions in this prompt. If code and documentation disagree, inspect history and update `docs/PROJECT_HANDOFF.md` with the verified current state before proceeding.
+1. Fully close Vivaldi.
+2. Temporarily rename the Bridge file; do not delete it and do not edit `window.html`.
+3. Reopen Vivaldi.
+4. Keep `On duplicate tab detected = Do nothing` and the stored `VW` scope if possible.
+5. Confirm the UI reports the Bridge unavailable/error state.
+6. Confirm no tabs are closed while the Bridge is unavailable.
+7. Use `Copy diagnostics` if present and preserve the sanitized JSON.
+8. Fully close Vivaldi.
+9. Restore the Bridge to the exact original filename.
+10. Reopen Vivaldi and confirm `VW` is available again with no warning.
+
+Expected result while the Bridge is unavailable: **zero closes**.
+
+Do not enable auto-close and do not modify `window.html` during this test.
+
+If 5F fails, stop closing tests and inspect diagnostics before any code change.
+
+## Safety / approval gates
+
+Do not merge, release, publish, open an upstream PR, force-push, delete remote branches, change/create tags, perform an official version bump, add a major dependency, or make another major architecture change without explicit maintainer approval.
+
+When a Workspace-related error occurs, preserve fail-closed behavior and provide a short copyable diagnostic JSON without browsing URLs/history.
+
+Continue from the repository state actually observed, not assumptions in this prompt.
 
 ---
