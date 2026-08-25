@@ -22,7 +22,7 @@ Completed stages:
 Current stage:
 
 - ETAPA 5 — real runtime validation: **in progress**
-- ETAPA 5A exposed a real Vivaldi default-Workspace edge case; a Bridge-only fix is committed and awaits browser re-validation.
+- ETAPA 5A has exposed two real Vivaldi Bridge compatibility cases: default/non-custom Workspace tabs and wrapped `vivaldi.prefs.get` values. Bridge-only fixes are committed; the latest fix awaits browser re-validation.
 
 Do not merge, release, publish, or open an upstream PR without explicit maintainer approval.
 
@@ -56,13 +56,13 @@ ETAPA 5A observation-only testing then found:
 - the one tab without `workspaceId` was tab `218526392`, a `chrome://` internal tab with `status = unloaded`, `discarded = true`, valid `vivExtData`, but no `workspaceId`
 - its `restoreStatus` value was an opaque non-JSON string and is not used as a Workspace source
 
-This identified the bug: the Bridge previously treated any valid `vivExtData` without `workspaceId` as an unresolved read and rejected the entire query. Vivaldi can represent the default/non-custom Workspace by omitting `workspaceId`, so one such tab could make the whole `VW` scope appear to contain no duplicates.
+This identified the first bug: the Bridge previously treated any valid `vivExtData` without `workspaceId` as an unresolved read and rejected the entire query. Vivaldi can represent the default/non-custom Workspace by omitting `workspaceId`, so one such tab could make the whole `VW` scope appear to contain no duplicates.
 
-Bridge-only fix committed on the feature branch:
+First Bridge-only fix committed on the feature branch:
 
 `d2d509ea7e416d78592b539ae8a81566cf34a355` — `Handle Vivaldi default workspace tabs in bridge`
 
-The fix:
+That fix:
 
 - introduces reserved internal sentinel `__dtc_vivaldi_default_workspace__`
 - maps only **valid parsed `vivExtData` with an absent/null `workspaceId`** to that sentinel
@@ -72,7 +72,44 @@ The fix:
 - does not modify `worker.js`, matching logic, priorities, or closing code
 - keeps protocol version `1` because the extension already accepts bounded non-empty string Workspace IDs
 
-The updated Bridge passed `node --check` syntax validation. The next manual action is to replace the installed `dtc-mods/dtc-vivaldi-workspace-bridge.js` with the updated repository file, fully restart Vivaldi, keep `Do nothing`, select `VW`, and repeat the ETAPA 5A observation-only test. Expected result: the three A tabs are detected as a group of 3 while the B tab remains excluded.
+That Bridge revision passed `node --check` syntax validation.
+
+After installing that revision and restarting Vivaldi, the ETAPA 5A observation-only test still returned `NO DUPLICATES` in Workspace A; the Workspace B test tab remained open and no popup error/warning appeared. A direct read-only Bridge query against the same window then returned:
+
+- `transportError = null`
+- `totalTabs = 57`
+- `testTabCount = 4`
+- `ok = false`
+- `reason = workspace-list-unavailable`
+- zero returned tab metadata
+
+This localized the second failure to the Bridge's Workspace-list read, before tab membership/matching.
+
+A direct read-only Vivaldi UI probe then established the actual `vivaldi.prefs.get("vivaldi.workspaces.list")` shape in this runtime:
+
+- `vivaldi.prefs.get` exists and has declared parameter count `0`
+- direct invocation returns a thenable
+- awaiting it yields an object with keys `defaultValue`, `store`, and `value`
+- the actual Workspace list is the `.value` property, which is an array (observed length `7`)
+- callback invocation returns the same wrapper object shape
+
+The previous Bridge expected the returned preference itself to be an array, so the valid wrapper object was rejected as `workspace-list-unavailable`.
+
+Second Bridge-only fix committed on the feature branch:
+
+`60a2333e59efea4f2865b46dbb60adade862bc47` — `Handle wrapped Vivaldi workspace preferences`
+
+That fix:
+
+- adds a small `extractWorkspaceList` normalizer inside the read-only Bridge
+- accepts either a direct array or an object with an own `.value` property that is an array
+- returns `null` for every other shape, preserving fail-closed behavior
+- leaves all existing per-Workspace ID validation unchanged
+- does not modify `worker.js`, matching logic, priorities, or closing code
+
+The diff was reviewed and is limited to `vivaldi-bridge/dtc-vivaldi-workspace-bridge.js`.
+
+The next manual action is to replace the installed `dtc-mods/dtc-vivaldi-workspace-bridge.js` with the latest repository version containing commit `60a2333e59efea4f2865b46dbb60adade862bc47`, fully restart Vivaldi, keep `Do nothing`, select `VW`, and repeat the ETAPA 5A observation-only test. Expected result: the three A tabs are detected as a group of 3 while the B tab remains excluded and no error/warning appears.
 
 Do **not** proceed to real closing tests until that re-test passes.
 
@@ -154,6 +191,7 @@ Runtime probes confirmed:
 - switching Workspaces changes the active Workspace ID correctly
 - a pinned tab retained its Workspace membership
 - a valid Vivaldi tab may have parsed `vivExtData` with no `workspaceId`; this represents the default/non-custom Workspace state and must not automatically be treated as an API read failure
+- `vivaldi.prefs.get("vivaldi.workspaces.list")` may return a wrapper object whose `.value` property is the actual Workspace-list array, in both Promise/thenable and callback use
 
 Therefore the selected architecture remains:
 
@@ -177,6 +215,8 @@ Any failure must result in zero closes. Never fall back to Active Window or anot
 
 Default/non-custom Workspace handling is explicit: only successfully parsed `vivExtData` with an absent/null `workspaceId` may map to the Bridge's reserved default-Workspace sentinel. Missing/malformed `vivExtData` remains a hard failure. The Bridge also requires custom-Workspace evidence when a sentinel is present so a broad Vivaldi API regression cannot silently collapse all tabs into the default Workspace.
 
+Workspace-list preference handling is also explicit: the Bridge accepts only either a direct array or a wrapper object with an own `.value` property that is an array. Any other preference shape fails closed before Workspace membership is used.
+
 The auto-navigation path separately validates the observed tab even if Chromium's URL-filtered candidate query temporarily omits that tab during navigation. This fixes the conservative navigation race found during code review without broadening the candidate set.
 
 Popup/options direct row and group close actions are also guarded in `VW`: synchronous row/group `removeTab` calls are batched and routed back to an internal-only background message, then Workspace membership is revalidated before removal. Outside `VW`, the historical direct-close behavior remains unchanged.
@@ -186,7 +226,7 @@ Popup/options direct row and group close actions are also guarded in `VW`: synch
 Main implementation files:
 
 - `vivaldiWorkspace.js` — extension-side Bridge client, response validation, fail-closed diagnostics, navigation-required-tab validation, and guarded panel close handling
-- `vivaldi-bridge/dtc-vivaldi-workspace-bridge.js` — read-only Vivaldi UI Bridge, including explicit default-Workspace sentinel handling
+- `vivaldi-bridge/dtc-vivaldi-workspace-bridge.js` — read-only Vivaldi UI Bridge, including explicit default-Workspace sentinel handling and strict Workspace-list preference unwrapping
 - `worker.js` — Workspace filtering and immediate pre-close revalidation for automatic and manual/batch paths
 - `helper.js` — batches direct panel row/group close calls only when `VW` is selected
 - `messageListener.js` — internal-only route for guarded panel closes
@@ -229,7 +269,7 @@ Representative error codes include:
 
 When `VW` is selected and an error exists, popup/options should show a short fail-closed message and a **Copy diagnostics** control.
 
-Bridge-side rejections such as `default-workspace-unverified` are surfaced extension-side as a rejected Bridge response and therefore remain fail-closed.
+Bridge-side rejections such as `default-workspace-unverified` or `workspace-list-unavailable` are surfaced extension-side as a rejected Bridge response and therefore remain fail-closed.
 
 ## Build state
 
@@ -239,13 +279,13 @@ The build script copies `manifest-c.json` to a temporary `manifest.json`, strips
 
 ETAPA 4A confirmed that this build path works on the maintainer's machine and that the unpacked fork loads with the intended stable ID.
 
-The ETAPA 5 default-Workspace fix changes only the Vivaldi UI Bridge file, so the already-loaded Chromium extension does not need a rebuild for this specific re-test. The installed Bridge copy does need to be replaced and Vivaldi fully restarted so the new listener code loads.
+The current ETAPA 5 compatibility fixes change only the Vivaldi UI Bridge file, so the already-loaded Chromium extension does not need a rebuild for this re-test. The installed Bridge copy does need to be replaced and Vivaldi fully restarted so the new listener code loads.
 
 ## Remaining validation / limitations
 
 ### ETAPA 5A re-validation
 
-After installing Bridge commit `d2d509ea7e416d78592b539ae8a81566cf34a355`, repeat the observation-only A/B test with `Do nothing`:
+After installing the Bridge version containing commit `60a2333e59efea4f2865b46dbb60adade862bc47`, repeat the observation-only A/B test with `Do nothing`:
 
 - Workspace A: 3 tabs with the exact test URL
 - Workspace B: 1 tab with the exact same URL
