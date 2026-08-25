@@ -85,6 +85,25 @@ Safety rules for this state:
 
 That extra evidence check prevents a future Vivaldi API regression that removes `workspaceId` everywhere from being mistaken for “all tabs are in the default Workspace”.
 
+### Workspace-list preference shape
+
+Real ETAPA 5 runtime testing also showed that `vivaldi.prefs.get("vivaldi.workspaces.list")` does not necessarily return the Workspace array directly.
+
+In Vivaldi 8.1.4087.70 / Chromium 150.0.7871.253, both the thenable/Promise-style result and the callback result returned an object with keys:
+
+- `defaultValue`
+- `store`
+- `value`
+
+The actual Workspace list was the `.value` property, which was an array (observed length `7`).
+
+The Bridge therefore accepts only these two preference shapes:
+
+- a direct array
+- an object with an own `.value` property whose value is an array
+
+Every other shape returns `null` and remains fail-closed. The extracted array is still subjected to all existing Workspace-ID validation; unwrapping the preference does not relax ID validation.
+
 ## Fail-closed diagnostics
 
 Workspace failures are stored temporarily in `chrome.storage.session` as a small diagnostic object and are also logged with prefix:
@@ -109,7 +128,7 @@ Example shape:
 
 When `VW` is selected, popup/options should display a short error and a **Copy diagnostics** action if a diagnostic exists.
 
-Bridge-side rejection reasons, including `default-workspace-unverified`, are surfaced extension-side as rejected Bridge responses and remain fail-closed.
+Bridge-side rejection reasons, including `default-workspace-unverified` and `workspace-list-unavailable`, are surfaced extension-side as rejected Bridge responses and remain fail-closed.
 
 ## Installation status
 
@@ -173,17 +192,23 @@ In Vivaldi 8.1.4087.70 / Chromium 150.0.7871.253:
 - a pinned tab retained its Workspace membership
 - Workspaces in the same Vivaldi window share the same Chromium `windowId`, so `windowId` is not a safe Workspace substitute
 - an ETAPA 5 test window with 56 tabs had 55 tabs with custom Workspace IDs and exactly one valid discarded internal tab whose parsed `vivExtData` omitted `workspaceId`
-- three same-URL tabs in Workspace A and one same-URL tab in Workspace B were all detected by normal `Active Window`, proving the base duplicate engine worked; the old Bridge rejected `VW` solely because of that one default-Workspace tab
+- three same-URL tabs in Workspace A and one same-URL tab in Workspace B were all detected by normal `Active Window`, proving the base duplicate engine worked
+- after the default-Workspace fix was installed, a direct Bridge query against a 57-tab window still failed safely with `workspace-list-unavailable` before returning tab metadata
+- direct UI probing showed `vivaldi.prefs.get("vivaldi.workspaces.list")` returned a wrapper object with the actual array in `.value`, for both awaited direct invocation and callback invocation
 
-These results are why the Bridge architecture remains necessary and why default/non-custom Workspace membership must be represented explicitly rather than treated as either an error or an Active Window fallback.
+These results are why the Bridge architecture remains necessary, why default/non-custom Workspace membership must be represented explicitly, and why Workspace-list preference values must be unwrapped narrowly rather than assumed to be raw arrays.
 
 ## Current ETAPA 5 checkpoint
 
-Bridge commit:
+First Bridge compatibility fix:
 
 `d2d509ea7e416d78592b539ae8a81566cf34a355` — `Handle Vivaldi default workspace tabs in bridge`
 
-This is a Bridge-only change. It passed `node --check` syntax validation and requires runtime re-validation after replacing the installed Bridge file and restarting Vivaldi.
+Latest Bridge compatibility fix:
+
+`60a2333e59efea4f2865b46dbb60adade862bc47` — `Handle wrapped Vivaldi workspace preferences`
+
+The latest change is Bridge-only. It accepts the observed wrapped Workspace preference while preserving fail-closed behavior for any unrecognized shape. It requires runtime re-validation after replacing the installed Bridge file and fully restarting Vivaldi.
 
 Expected observation-only re-test with active Workspace A:
 
