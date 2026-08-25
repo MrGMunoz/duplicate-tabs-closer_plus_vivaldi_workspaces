@@ -26,11 +26,13 @@ Completed stages:
 - ETAPA 5H-A — stale tab-membership during guarded close: passed
 - ETAPA 5H-B — active-Workspace change during guarded close: passed
 - ETAPA 5I — pre-existing `Active Window` non-VW scope regression: passed
+- ETAPA 5J — pre-existing `All Windows` non-VW scope regression across two real Vivaldi windows: passed
 
 Current stage:
 
-- ETAPA 5 — real runtime validation: in progress
-- Next: ETAPA 5J — regression validation of pre-existing `All Windows` with a second real Vivaldi window, covering both non-VW routing and multi-window behavior.
+- ETAPA 5 — real runtime validation: in progress, but the originally targeted custom-Workspace/manual-close use case now has substantial real-runtime coverage.
+- Remaining ETAPA 5 work is broader hardening/generalization. There are 11 remaining validation themes in the current matrix; they are not all required for the already-covered manual custom-Workspace use case.
+- Automatic close has not yet been runtime-validated under `VW` and must not be treated as validated.
 
 Do not merge, release, publish, open an upstream PR, force-push, delete branches/tags, perform an official version bump, add a major dependency, or make another major architecture change without explicit maintainer approval.
 
@@ -335,15 +337,46 @@ Observed result:
 
 This validates that the legacy `Active Window` path remains upstream-compatible in Vivaldi: it deliberately sees across Workspaces that share the same Chromium window, closes normally without the `VW` guard, and switching back to `VW` restores exact Workspace isolation.
 
-## Exact next action — ETAPA 5J
+### ETAPA 5J — `All Windows` non-VW regression + real multi-window enumeration: PASSED
 
-Validate the sibling pre-existing `All Windows` scope (`A`) using a second real Vivaldi browser window.
+Starting from the restored A=2 / B=2 layout in the original Vivaldi window, the maintainer opened a second normal Vivaldi window with exactly one matching test tab, then changed Scope to the pre-existing `All Windows` scope while keeping `On duplicate tab detected = Do nothing`.
 
-Reason for this order: `Active Window` regression has passed, and code review shows `All Windows` is the other Chromium non-container scope that changes the core candidate query (`searchInAllWindows`). A second real window therefore tests both that legacy non-VW routing remains untouched and that the extension can enumerate and close duplicates across actual Chromium windows without accidentally applying Workspace filtering.
+Observed result:
 
-Start from the restored A=2 / B=2 layout in the original Vivaldi window, `Scope = Active Vivaldi Workspace`, and `On duplicate tab detected = Do nothing`. Create one second normal Vivaldi window and place exactly one matching test tab there. Then change Scope to `All Windows`. The expected observation-only count is 5 total matching test tabs across both browser windows. Verify this from each window, then perform one controlled `Close duplicates` under `All Windows` and require exactly one matching test tab to remain across both windows in total. Restore the original A=2 / B=2 disposable layout afterward, close the temporary second window when safe, return to `Scope = Active Vivaldi Workspace`, and confirm A=2 / B=2 detection again.
+- from the original Vivaldi window, DTC detected exactly 5 matching test tabs across both browser windows
+- from the second Vivaldi window, DTC also detected exactly 5
+- no Vivaldi Workspace gating error appeared
+- pressing `Close duplicates` exactly once left exactly 1 matching test tab total across both browser windows
+- no unrelated tab was closed
+- the temporary second window was closed after validation
+- the original disposable layout was restored to A=2 / B=2
+- returning Scope to `Active Vivaldi Workspace` again produced exactly 2 detected in A and exactly 2 in B, with no Bridge error
 
-Do not enable automatic close. If `All Windows` sees only the current window, behaves like `VW`, shows a Workspace diagnostic as a gating error, or closes an unexpected non-test tab, stop and diagnose before changing code.
+This validates upstream `All Windows` behavior across two real Vivaldi browser windows and confirms that non-VW multi-window enumeration/closing remains separate from the Workspace filter and its fail-closed guard.
+
+## Post-5J checkpoint — original use covered, broader hardening remains
+
+The originally targeted use case — exact isolation to the active custom Vivaldi Workspace, observation/manual review, guarded manual close actions, preservation of upstream matching/priorities, and fail-closed behavior when Workspace state becomes unsafe — has passed substantial real-runtime testing.
+
+If development stops at this checkpoint, do **not** describe ETAPA 5 as globally complete or the fork as release-ready. Describe it instead as a validated personal-use/manual-workflow checkpoint with broader hardening still open.
+
+There are **11 remaining validation themes** in the current broader matrix:
+
+- active tab behavior
+- different URL on same domain
+- HTTPS/age priorities
+- discarded/hibernated tabs
+- Vivaldi tab stacks/groups
+- broader multiple-Workspace / multiple-window behavior specifically under `VW`
+- incognito, if applicable
+- startup/session restore/lazy loading
+- Vivaldi internal pages
+- default/non-custom Workspace runtime behavior
+- automatic-close path
+
+These are not all equally important and several can be combined into fewer test sessions. For the already-tested usage pattern (`Scope = Active Vivaldi Workspace`, `On duplicate tab detected = Do nothing`, manual review/manual closes in custom Workspaces), none of these remaining themes is required merely to prove the original use case again.
+
+If the intended usage includes `Close tab automatically`, the automatic-close theme remains essential before that mode is treated as validated.
 
 ## Diagnostics
 
@@ -392,7 +425,6 @@ Do not alter unless directly required:
 
 Still to validate substantially include:
 
-- `All Windows` non-VW regression and real multi-window enumeration (ETAPA 5J next)
 - active tab behavior
 - different URL on same domain
 - HTTPS/age priorities
@@ -403,7 +435,7 @@ Still to validate substantially include:
 - startup/session restore/lazy loading
 - Vivaldi internal pages
 - default/non-custom Workspace runtime behavior
-- automatic-close path, only after manual/fail-closed testing is sufficiently strong
+- automatic-close path
 
 Already validated substantially:
 
@@ -418,6 +450,7 @@ Already validated substantially:
 - stale tab membership during a guarded close -> `VW-TAB-MOVED-WORKSPACE` and zero DTC closes
 - active Workspace change during a guarded close -> `VW-WORKSPACE-CHANGED` and zero DTC closes
 - pre-existing `Active Window` behavior across Workspaces in one Vivaldi window, including a normal manual close
+- pre-existing `All Windows` behavior across two real Vivaldi windows, including a normal manual close and no unrelated-tab close
 
 ## Documentation / maintainer interaction requirement
 
