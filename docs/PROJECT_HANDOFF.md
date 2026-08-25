@@ -21,11 +21,12 @@ Completed stages:
 - ETAPA 5C — controlled direct-row X close under `VW`: passed
 - ETAPA 5D — controlled grouped-row/group-header X close under `VW`: passed
 - ETAPA 5E — pinned-tab priority under `VW`: passed
+- ETAPA 5F — missing Bridge fail-closed validation: passed
 
 Current stage:
 
 - ETAPA 5 — real runtime validation: in progress
-- Next: ETAPA 5F — deliberately make the Vivaldi UI Bridge unavailable and confirm fail-closed behavior with zero closes, then restore the Bridge.
+- Next: ETAPA 5G — validate live Workspace switching and tab movement between Workspaces in observation-only mode before attempting a deliberate stale/race close test.
 
 Do not merge, release, publish, open an upstream PR, force-push, delete branches/tags, perform an official version bump, add a major dependency, or make another major architecture change without explicit maintainer approval.
 
@@ -225,27 +226,59 @@ Result after pressing `Close duplicates` exactly once:
 
 This confirms the upstream pinned-tab priority remains effective after Workspace filtering in the tested runtime case.
 
-## Exact next action — ETAPA 5F
+### ETAPA 5F — missing Bridge / fail-closed: PASSED
 
-Test the most important fail-closed condition with the Bridge intentionally unavailable.
+The installed Bridge was first confirmed working with two identical tabs in Workspace A and one matching tab in Workspace B. `Scope = VW` and `On duplicate tab detected = Do nothing` remained selected.
+
+The maintainer then fully closed Vivaldi, temporarily renamed the installed Bridge from:
+
+`dtc-vivaldi-workspace-bridge.js`
+
+to:
+
+`dtc-vivaldi-workspace-bridge.js.disabled`
+
+without modifying `window.html`, and restarted Vivaldi.
+
+Observed result while the Bridge was unavailable:
+
+- before disabling the Bridge, Workspace A: DTC detected exactly 2
+- Workspace A: both test tabs remained open
+- Workspace B: matching test tab remained open
+- explicit error shown: `Vivaldi Workspace error: VW-BRIDGE-UNREACHABLE.`
+- no silent fallback to another Scope was observed
+- zero tabs were closed
+
+After fully closing Vivaldi, restoring the exact `.js` filename, and restarting:
+
+- `Active Vivaldi Workspace` became available normally again
+- Workspace A again detected exactly 2
+- no Bridge error remained
+
+This validates the critical missing-Bridge fail-closed path in the tested runtime: an unreachable Bridge produced a visible diagnostic and **zero closes**, then recovered cleanly after restoration.
+
+## Exact next action — ETAPA 5G
+
+Validate live Workspace switching and tab movement between Workspaces before attempting a deliberate stale/race close.
+
+Reason for this order: the close guards explicitly depend on the active Workspace and current tab membership. Before engineering a race, first establish that normal runtime switching and moving tabs produces the exact expected membership changes end-to-end through the Bridge and `VW` filter.
 
 High-level procedure:
 
-1. Preserve the current installed Bridge file; do not delete it.
-2. Fully close Vivaldi.
-3. Temporarily rename `resources\vivaldi\dtc-mods\dtc-vivaldi-workspace-bridge.js` so the script path referenced by `window.html` cannot load it.
-4. Reopen Vivaldi.
-5. Keep the stored scope as `VW` if possible and keep `On duplicate tab detected = Do nothing`.
-6. Prepare duplicate test tabs if necessary, but do not close any manually outside the extension.
-7. Confirm the VW UI reports the Bridge unavailable/error state and that no extension close operation can close tabs.
-8. If a `Copy diagnostics` control is present, copy the sanitized diagnostic.
-9. Fully close Vivaldi again.
-10. Restore the Bridge file to the exact original filename.
-11. Reopen Vivaldi and confirm `VW` becomes available again with no warning.
+1. Keep `Scope = Active Vivaldi Workspace` and `On duplicate tab detected = Do nothing`.
+2. Start from the current state: two identical test tabs in Workspace A and one in Workspace B.
+3. Add one more identical test tab in Workspace B so both A and B contain exactly two.
+4. Switch repeatedly between A and B and confirm DTC detects exactly two in whichever Workspace is active, with no Bridge warning.
+5. Move exactly one test tab from A to B using Vivaldi's own Workspace command.
+6. Confirm A now has only one test tab and no duplicate group for that URL.
+7. Confirm B now has three and DTC detects exactly three there.
+8. Move that same tab back from B to A.
+9. Confirm A returns to exactly two detected and B returns to exactly two detected.
+10. Do not close duplicates, rows, or groups during this test.
 
-Expected fail-closed result while Bridge is unavailable: **zero tabs closed**.
+Expected result: membership follows the real Vivaldi Workspace immediately and exactly; no cross-Workspace contamination, no fallback, no error, and zero closes.
 
-Do not edit `window.html` for this test. Do not delete the Bridge file. Do not enable automatic close.
+If this fails, stop before any race/close test and diagnose the observed mismatch first.
 
 ## Diagnostics
 
@@ -294,8 +327,7 @@ Do not alter unless directly required:
 
 Still to validate substantially include:
 
-- missing/unavailable Bridge -> zero closes (ETAPA 5F next)
-- Workspace switching and tab movement between Workspaces
+- Workspace switching and tab movement between Workspaces (ETAPA 5G next)
 - close-race / stale membership fail-closed behavior
 - active tab behavior
 - different URL on same domain
@@ -309,6 +341,15 @@ Still to validate substantially include:
 - Vivaldi internal pages
 - default/non-custom Workspace runtime behavior
 - automatic-close path, only after manual/fail-closed testing is sufficiently strong
+
+Already validated substantially:
+
+- same URL cross-Workspace isolation
+- manual `Close duplicates`
+- direct row close
+- grouped close
+- pinned priority
+- missing/unavailable Bridge -> explicit error and zero closes
 
 ## Documentation / maintainer interaction requirement
 
