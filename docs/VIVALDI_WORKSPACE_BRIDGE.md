@@ -66,6 +66,25 @@ Successful responses include:
 
 The extension rejects responses that do not match the request exactly.
 
+### Default / non-custom Workspace
+
+Real ETAPA 5 runtime testing showed that Vivaldi can return successfully parsed `vivExtData` with no `workspaceId`. This is a valid representation of the default/non-custom Workspace and is different from a failed metadata read.
+
+The Bridge therefore maps only this exact case to a reserved internal string:
+
+`__dtc_vivaldi_default_workspace__`
+
+This remains protocol version `1` because protocol v1 already accepts bounded non-empty string Workspace IDs.
+
+Safety rules for this state:
+
+- missing or malformed `vivExtData` is still a hard failure
+- an explicit non-null Workspace ID must still be valid and present in `vivaldi.workspaces.list`
+- the reserved sentinel must not collide with a real Workspace ID
+- whenever a query includes the default-Workspace sentinel, the Bridge requires evidence that the same Vivaldi window still exposes at least one recognized custom Workspace ID; otherwise it rejects the query as `default-workspace-unverified`
+
+That extra evidence check prevents a future Vivaldi API regression that removes `workspaceId` everywhere from being mistaken for “all tabs are in the default Workspace”.
+
 ## Fail-closed diagnostics
 
 Workspace failures are stored temporarily in `chrome.storage.session` as a small diagnostic object and are also logged with prefix:
@@ -90,35 +109,24 @@ Example shape:
 
 When `VW` is selected, popup/options should display a short error and a **Copy diagnostics** action if a diagnostic exists.
 
+Bridge-side rejection reasons, including `default-workspace-unverified`, are surfaced extension-side as rejected Bridge responses and remain fail-closed.
+
 ## Installation status
 
-**Persistent Bridge installation is not yet considered validated.**
+**Persistent Bridge installation was confirmed working by the maintainer on 2026-08-24.**
 
-During ETAPA 2 the Bridge concept was proven manually by opening Vivaldi's internal UI DevTools through:
+Confirmed runtime facts:
 
-`vivaldi://inspect/#apps`
-
-and temporarily installing an in-memory message listener in the Vivaldi UI console.
-
-That experiment successfully returned real Workspace IDs to Duplicate Tabs Closer.
+- Vivaldi starts normally with the persistent UI mod installed
+- `Active Vivaldi Workspace` appears in Scope
+- `VW` can be selected while `On duplicate tab detected = Do nothing`
+- no Bridge unavailable/error warning appeared during ETAPA 4B validation
 
 The repository contains the persistent Bridge source at:
 
 `vivaldi-bridge/dtc-vivaldi-workspace-bridge.js`
 
-### Latest checkpoint
-
-ETAPA 4A was confirmed complete: the Chromium build succeeded, the unpacked fork loaded in Vivaldi, and the stable extension ID was verified as `jkhljmjemfaeoklndkcnehbcnmfjcfam`.
-
-ETAPA 4B persistent-install instructions were delivered, but **the repository does not yet know whether the maintainer executed them**. The previous conversation was a temporary chat and may have ended when Vivaldi was closed.
-
-Therefore a future agent must not assume that `window.html` was edited, that the Bridge file was copied, that Vivaldi was restarted, or that `Active Vivaldi Workspace` appeared in the UI.
-
-The next chat should first establish whether ETAPA 4B was not started, succeeded, failed, or is uncertain.
-
-### Procedure that was already given
-
-The intended installation procedure is:
+The installation procedure is:
 
 1. Find the current Vivaldi installation's `resources\vivaldi` directory and verify `window.html` exists.
 2. Back up `window.html` as `window.html.dtc-backup`.
@@ -136,7 +144,7 @@ The intended installation procedure is:
 9. Verify `Active Vivaldi Workspace` appears in Scope.
 10. Select it only while still in `Do nothing` mode and verify no Bridge-unavailable diagnostic appears.
 
-Do not proceed to closing real duplicate tabs until this persistent installation is positively verified.
+Do not proceed to closing real duplicate tabs until observation-only Workspace filtering tests pass.
 
 ## Update behavior
 
@@ -150,7 +158,9 @@ This is an accepted limitation only because the fork is fail-closed:
 
 The UI should make the failure visible and provide diagnostics.
 
-## Real-runtime evidence already established
+If only the Bridge source changes, the Chromium extension itself does not need to be rebuilt. Replace the installed Bridge copy and fully restart Vivaldi so the new listener code is loaded.
+
+## Real-runtime evidence established
 
 In Vivaldi 8.1.4087.70 / Chromium 150.0.7871.253:
 
@@ -161,5 +171,25 @@ In Vivaldi 8.1.4087.70 / Chromium 150.0.7871.253:
 - Vivaldi returned distinct Workspace IDs for two test Workspaces
 - switching Workspaces changed the active Workspace ID correctly
 - a pinned tab retained its Workspace membership
+- Workspaces in the same Vivaldi window share the same Chromium `windowId`, so `windowId` is not a safe Workspace substitute
+- an ETAPA 5 test window with 56 tabs had 55 tabs with custom Workspace IDs and exactly one valid discarded internal tab whose parsed `vivExtData` omitted `workspaceId`
+- three same-URL tabs in Workspace A and one same-URL tab in Workspace B were all detected by normal `Active Window`, proving the base duplicate engine worked; the old Bridge rejected `VW` solely because of that one default-Workspace tab
 
-These results are why the Bridge architecture was selected over unsafe `windowId`/`groupId` heuristics.
+These results are why the Bridge architecture remains necessary and why default/non-custom Workspace membership must be represented explicitly rather than treated as either an error or an Active Window fallback.
+
+## Current ETAPA 5 checkpoint
+
+Bridge commit:
+
+`d2d509ea7e416d78592b539ae8a81566cf34a355` — `Handle Vivaldi default workspace tabs in bridge`
+
+This is a Bridge-only change. It passed `node --check` syntax validation and requires runtime re-validation after replacing the installed Bridge file and restarting Vivaldi.
+
+Expected observation-only re-test with active Workspace A:
+
+- three identical test tabs in A -> detected as a duplicate group of 3
+- one identical test tab in B -> excluded
+- no automatic closing
+- no Bridge warning
+
+Do not advance to close testing until this re-test passes.
