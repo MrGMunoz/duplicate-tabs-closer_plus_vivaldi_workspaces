@@ -17,12 +17,12 @@ Completed stages:
 - ETAPA 2 — architecture research/design: complete
 - ETAPA 3 — implementation/review pass: complete enough for browser validation
 - ETAPA 4A — Chromium build + unpacked fork load in Vivaldi: **confirmed complete by maintainer**
+- ETAPA 4B — persistent Vivaldi Workspace Bridge installation: **confirmed complete by maintainer**
 
-Current unresolved stage:
+Current stage:
 
-- ETAPA 4B — persistent Vivaldi Workspace Bridge installation: **instructions delivered, execution/result unknown**
-
-The previous chat was temporary. Do not assume the maintainer followed ETAPA 4B instructions after they were provided.
+- ETAPA 5 — real runtime validation: **in progress**
+- ETAPA 5A exposed a real Vivaldi default-Workspace edge case; a Bridge-only fix is committed and awaits browser re-validation.
 
 Do not merge, release, publish, or open an upstream PR without explicit maintainer approval.
 
@@ -36,34 +36,51 @@ ETAPA 4A was confirmed successful by the maintainer. Confirmed facts:
 - fork extension ID confirmed exactly as `jkhljmjemfaeoklndkcnehbcnmfjcfam`
 - original Duplicate Tabs Closer extension was disabled, not removed
 - fork was left with `On duplicate tab detected = Do nothing`
-- before persistent Bridge installation, Scope remained `Active Window`, which was expected
 
-ETAPA 4B instructions were then given, but the maintainer warned that closing Vivaldi would also lose the temporary chat. Therefore **none of the following may be assumed to have happened**:
+ETAPA 4B was subsequently confirmed successful by the maintainer on 2026-08-24:
 
-- locating the current Vivaldi `resources\vivaldi` directory
-- backing up `window.html` as `window.html.dtc-backup`
-- creating `resources\vivaldi\dtc-mods`
-- copying `vivaldi-bridge/dtc-vivaldi-workspace-bridge.js`
-- editing `window.html`
-- restarting Vivaldi
-- seeing `Active Vivaldi Workspace` in Scope
-- selecting `VW`
-- seeing or not seeing a Bridge error
+- persistent Bridge installed
+- Vivaldi starts normally
+- `Active Vivaldi Workspace` appears in Scope
+- `VW` can be selected
+- `On duplicate tab detected` remained `Do nothing`
+- no Bridge error or warning appeared
 
-The first question in a new chat should be only to establish which state applies:
+ETAPA 5A observation-only testing then found:
 
-1. ETAPA 4B not started
-2. Bridge installed and appears to work
-3. installation attempted but an error occurred
-4. maintainer is unsure
+- same test URL with one tab in Workspace A and one in Workspace B -> `NO DUPLICATES` under `VW` (expected isolation)
+- adding a second and then third same-URL tab in Workspace A -> still `NO DUPLICATES` under `VW` (unexpected)
+- switching only Scope to `Active Window` -> DTC detected all 4 same-URL tabs across A+B, proving the base duplicate engine works and that Vivaldi Workspaces share the same Chromium window
+- direct read-only inspection in the Vivaldi UI context showed the four test tabs had correct Workspace metadata: three tabs had Workspace A ID `1786421728088`, one had Workspace B ID `1787604210876`
+- scanning the same Vivaldi window found 56 tabs total, 55 with a Workspace ID and exactly 1 without one
+- the one tab without `workspaceId` was tab `218526392`, a `chrome://` internal tab with `status = unloaded`, `discarded = true`, valid `vivExtData`, but no `workspaceId`
+- its `restoreStatus` value was an opaque non-JSON string and is not used as a Workspace source
 
-If unsure, treat ETAPA 4B as **not validated**.
+This identified the bug: the Bridge previously treated any valid `vivExtData` without `workspaceId` as an unresolved read and rejected the entire query. Vivaldi can represent the default/non-custom Workspace by omitting `workspaceId`, so one such tab could make the whole `VW` scope appear to contain no duplicates.
 
-## ETAPA 4B procedure already delivered
+Bridge-only fix committed on the feature branch:
 
-The persistent Bridge procedure given to the maintainer was:
+`d2d509ea7e416d78592b539ae8a81566cf34a355` — `Handle Vivaldi default workspace tabs in bridge`
 
-1. Open `vivaldi://about` and confirm the current Vivaldi version.
+The fix:
+
+- introduces reserved internal sentinel `__dtc_vivaldi_default_workspace__`
+- maps only **valid parsed `vivExtData` with an absent/null `workspaceId`** to that sentinel
+- still fails closed if `vivExtData` itself is missing, malformed, the tab/window is inconsistent, or a non-null Workspace ID is invalid/not in Vivaldi's Workspace list
+- rejects a collision if Vivaldi ever returns the reserved sentinel as a real Workspace ID
+- if a query contains a default-Workspace sentinel, requires evidence that the window still exposes at least one recognized custom Workspace ID; this prevents a future API break that suddenly removes `workspaceId` everywhere from being interpreted as “all tabs are in default Workspace”
+- does not modify `worker.js`, matching logic, priorities, or closing code
+- keeps protocol version `1` because the extension already accepts bounded non-empty string Workspace IDs
+
+The updated Bridge passed `node --check` syntax validation. The next manual action is to replace the installed `dtc-mods/dtc-vivaldi-workspace-bridge.js` with the updated repository file, fully restart Vivaldi, keep `Do nothing`, select `VW`, and repeat the ETAPA 5A observation-only test. Expected result: the three A tabs are detected as a group of 3 while the B tab remains excluded.
+
+Do **not** proceed to real closing tests until that re-test passes.
+
+## ETAPA 4B persistent Bridge procedure
+
+The persistent Bridge installation procedure used was:
+
+1. Open `vivaldi://about` and confirm the current Vivaldi installation.
 2. Locate that installation's `resources\vivaldi` directory and verify it contains `window.html`.
 3. Back up `window.html` as `window.html.dtc-backup`.
 4. Create `resources\vivaldi\dtc-mods`.
@@ -81,7 +98,7 @@ The persistent Bridge procedure given to the maintainer was:
 11. Select it only while still in `Do nothing` mode.
 12. Verify no Bridge unavailable/error warning appears.
 
-Do not proceed to real duplicate-closing tests until ETAPA 4B is positively verified.
+Vivaldi updates can overwrite this UI modification, so the Bridge may need to be reinstalled after an update.
 
 ## Repository relationship
 
@@ -94,6 +111,8 @@ The fork started from upstream `master` commit:
 `214a60a3a6d587ae7a78a13a7911d08366e7c963`
 
 Development branch was created from that exact commit.
+
+At the start of this resumed validation the feature branch was 21 commits ahead of `master` and 0 behind; `master` remained exactly at the fork base commit above. Subsequent ETAPA 5 commits are on the feature branch only.
 
 ## Runtime research result
 
@@ -128,14 +147,15 @@ Inside that UI context the following were confirmed available:
 
 A temporary runtime listener was installed manually in the Vivaldi UI console. Duplicate Tabs Closer successfully sent an external message to that listener and received Workspace data.
 
-The second probe passed explicit window/tab IDs and confirmed:
+Runtime probes confirmed:
 
-- Vivaldi returned a real `workspaceId` for each test tab
-- Workspace A and Workspace B had different stable IDs
-- switching Workspaces changed `activeWorkspaceId` correctly
+- Vivaldi returns real `workspaceId` values for custom-Workspace tabs
+- Workspace A and Workspace B have different stable IDs
+- switching Workspaces changes the active Workspace ID correctly
 - a pinned tab retained its Workspace membership
+- a valid Vivaldi tab may have parsed `vivExtData` with no `workspaceId`; this represents the default/non-custom Workspace state and must not automatically be treated as an API read failure
 
-Therefore the selected architecture is:
+Therefore the selected architecture remains:
 
 `fork extension -> read-only Vivaldi UI Bridge -> Vivaldi internal Workspace metadata`
 
@@ -155,6 +175,8 @@ When `VW` is selected:
 
 Any failure must result in zero closes. Never fall back to Active Window or another scope.
 
+Default/non-custom Workspace handling is explicit: only successfully parsed `vivExtData` with an absent/null `workspaceId` may map to the Bridge's reserved default-Workspace sentinel. Missing/malformed `vivExtData` remains a hard failure. The Bridge also requires custom-Workspace evidence when a sentinel is present so a broad Vivaldi API regression cannot silently collapse all tabs into the default Workspace.
+
 The auto-navigation path separately validates the observed tab even if Chromium's URL-filtered candidate query temporarily omits that tab during navigation. This fixes the conservative navigation race found during code review without broadening the candidate set.
 
 Popup/options direct row and group close actions are also guarded in `VW`: synchronous row/group `removeTab` calls are batched and routed back to an internal-only background message, then Workspace membership is revalidated before removal. Outside `VW`, the historical direct-close behavior remains unchanged.
@@ -164,7 +186,7 @@ Popup/options direct row and group close actions are also guarded in `VW`: synch
 Main implementation files:
 
 - `vivaldiWorkspace.js` — extension-side Bridge client, response validation, fail-closed diagnostics, navigation-required-tab validation, and guarded panel close handling
-- `vivaldi-bridge/dtc-vivaldi-workspace-bridge.js` — read-only Vivaldi UI Bridge
+- `vivaldi-bridge/dtc-vivaldi-workspace-bridge.js` — read-only Vivaldi UI Bridge, including explicit default-Workspace sentinel handling
 - `worker.js` — Workspace filtering and immediate pre-close revalidation for automatic and manual/batch paths
 - `helper.js` — batches direct panel row/group close calls only when `VW` is selected
 - `messageListener.js` — internal-only route for guarded panel closes
@@ -207,6 +229,8 @@ Representative error codes include:
 
 When `VW` is selected and an error exists, popup/options should show a short fail-closed message and a **Copy diagnostics** control.
 
+Bridge-side rejections such as `default-workspace-unverified` are surfaced extension-side as a rejected Bridge response and therefore remain fail-closed.
+
 ## Build state
 
 The Chromium PowerShell build uses its own `$SingleFiles` list, not only `build/list.txt`. Both build inputs include `vivaldiWorkspace.js`.
@@ -215,15 +239,22 @@ The build script copies `manifest-c.json` to a temporary `manifest.json`, strips
 
 ETAPA 4A confirmed that this build path works on the maintainer's machine and that the unpacked fork loads with the intended stable ID.
 
+The ETAPA 5 default-Workspace fix changes only the Vivaldi UI Bridge file, so the already-loaded Chromium extension does not need a rebuild for this specific re-test. The installed Bridge copy does need to be replaced and Vivaldi fully restarted so the new listener code loads.
+
 ## Remaining validation / limitations
 
-### Persistent Bridge installation
+### ETAPA 5A re-validation
 
-The Bridge has been proven through the Vivaldi UI DevTools console, but **persistent installation has not yet been confirmed in this handoff**.
+After installing Bridge commit `d2d509ea7e416d78592b539ae8a81566cf34a355`, repeat the observation-only A/B test with `Do nothing`:
 
-Instructions were delivered for JavaScript-mod injection through `window.html` inside Vivaldi's `resources\vivaldi` UI directory. Browser updates can overwrite that modification.
+- Workspace A: 3 tabs with the exact test URL
+- Workspace B: 1 tab with the exact same URL
+- active Workspace A
+- Scope `VW`
 
-If the persistent Bridge does not load, the feature must remain fail-closed and the diagnostic should be copied back to the development chat.
+Expected: DTC lists exactly 3 duplicate tabs from A, not the B tab, and no Bridge error appears.
+
+Do not start real close testing until this passes.
 
 ### Localization
 
@@ -231,7 +262,7 @@ The `VW` UI currently has safe English fallback strings. Proper locale messages 
 
 ### Automated validation
 
-Upstream has no real npm automated test suite. No claim of full regression safety should be made before ETAPA 4B/5 runtime testing.
+Upstream has no real npm automated test suite. No claim of full regression safety should be made before ETAPA 5 runtime testing is substantially complete.
 
 ## Existing upstream behavior that must remain unchanged
 
@@ -274,6 +305,7 @@ The agreed real tests include:
 - race during close
 - startup/session restore/lazy loading
 - Vivaldi internal pages
+- default/non-custom Workspace
 - direct row close under `VW`
 - grouped row close under `VW`
 
