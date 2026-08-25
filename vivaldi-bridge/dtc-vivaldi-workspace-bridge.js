@@ -8,6 +8,7 @@
 (() => {
     const ALLOWED_EXTENSION_ID = "jkhljmjemfaeoklndkcnehbcnmfjcfam";
     const PROTOCOL_VERSION = 1;
+    const DEFAULT_WORKSPACE_ID = "__dtc_vivaldi_default_workspace__";
 
     const isValidWorkspaceId = (value) =>
         (typeof value === "number" && Number.isSafeInteger(value) && value >= 0)
@@ -62,9 +63,22 @@
             const extra = await getTabExtra(tabId);
             if (!extra || typeof extra !== "object") return null;
             const ext = parseVivExtData(extra.vivExtData ?? tab.vivExtData ?? null);
-            const workspaceId = ext?.workspaceId;
-            if (!isValidWorkspaceId(workspaceId)) return null;
-            if (!validWorkspaceIds.has(workspaceId)) return null;
+            if (!ext) return null;
+
+            const rawWorkspaceId = ext.workspaceId;
+            let workspaceId;
+            if (rawWorkspaceId === undefined || rawWorkspaceId === null) {
+                // Vivaldi represents tabs in the default (non-custom) Workspace without
+                // a workspaceId in vivExtData. Keep that state explicit instead of
+                // treating it as an unresolved API read. Malformed/missing vivExtData
+                // still returns null above and therefore remains fail-closed.
+                workspaceId = DEFAULT_WORKSPACE_ID;
+            } else {
+                if (!isValidWorkspaceId(rawWorkspaceId)) return null;
+                if (!validWorkspaceIds.has(rawWorkspaceId)) return null;
+                workspaceId = rawWorkspaceId;
+            }
+
             return {
                 id: tabId,
                 windowId: tab.windowId,
@@ -75,6 +89,29 @@
         } catch (_) {
             return null;
         }
+    };
+
+    const hasCustomWorkspaceEvidence = async (windowId, validWorkspaceIds, knownInfos) => {
+        if (knownInfos.some(info => info && info.workspaceId !== DEFAULT_WORKSPACE_ID)) return true;
+
+        let tabs;
+        try {
+            tabs = await chrome.tabs.query({ windowId: windowId });
+        } catch (_) {
+            return false;
+        }
+        if (!Array.isArray(tabs)) return false;
+
+        for (const tab of tabs) {
+            try {
+                const extra = await getTabExtra(tab.id);
+                if (!extra || typeof extra !== "object") continue;
+                const ext = parseVivExtData(extra.vivExtData ?? tab.vivExtData ?? null);
+                const workspaceId = ext?.workspaceId;
+                if (isValidWorkspaceId(workspaceId) && validWorkspaceIds.has(workspaceId)) return true;
+            } catch (_) {}
+        }
+        return false;
     };
 
     const handleQuery = async (message) => {
@@ -91,7 +128,9 @@
         const workspaceIds = workspaces
             .map(workspace => workspace?.id)
             .filter(isValidWorkspaceId);
-        if (workspaceIds.length !== workspaces.length || new Set(workspaceIds).size !== workspaceIds.length)
+        if (workspaceIds.length !== workspaces.length
+                || new Set(workspaceIds).size !== workspaceIds.length
+                || workspaceIds.includes(DEFAULT_WORKSPACE_ID))
             return { ok: false, reason: "workspace-list-invalid" };
         const validWorkspaceIds = new Set(workspaceIds);
 
@@ -114,6 +153,16 @@
                 : await readTabWorkspace(tabId, windowId, validWorkspaceIds);
             if (!info) return { ok: false, reason: "tab-workspace-unresolved" };
             tabs.push(info);
+        }
+
+        const knownInfos = [activeInfo, ...tabs];
+        if (knownInfos.some(info => info.workspaceId === DEFAULT_WORKSPACE_ID)) {
+            // If every tab suddenly lost workspaceId because Vivaldi changed its internal
+            // API, treating all of them as the default Workspace would be unsafe. Require
+            // independent evidence that this window still exposes at least one recognized
+            // custom Workspace ID; otherwise fail closed.
+            const hasEvidence = await hasCustomWorkspaceEvidence(windowId, validWorkspaceIds, knownInfos);
+            if (!hasEvidence) return { ok: false, reason: "default-workspace-unverified" };
         }
 
         return {
