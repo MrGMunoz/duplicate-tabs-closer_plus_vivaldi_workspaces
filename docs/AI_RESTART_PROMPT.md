@@ -38,7 +38,9 @@ The maintainer is not a programmer. This project is developed using AI-assisted 
 - ETAPA 4A: **confirmed complete by the maintainer**.
 - ETAPA 4B: **confirmed complete by the maintainer**.
 - ETAPA 5: real runtime validation **in progress**.
-- ETAPA 5A: **not yet passed**. Two Bridge compatibility cases were found and fixed on the feature branch; the latest Bridge revision still requires browser re-validation.
+- ETAPA 5A: **passed**.
+- ETAPA 5B: **passed**.
+- ETAPA 5C: **next** — controlled direct-row close under `VW` while keeping `On duplicate tab detected = Do nothing`.
 
 Confirmed ETAPA 4A/4B facts:
 
@@ -52,7 +54,7 @@ Confirmed ETAPA 4A/4B facts:
 - `On duplicate tab detected = Do nothing`
 - no Bridge-unavailable warning during ETAPA 4B validation
 
-## ETAPA 5A test state
+## ETAPA 5A history and result
 
 Observation-only test URL:
 
@@ -75,7 +77,7 @@ Direct Vivaldi UI inspection showed correct Workspace metadata for the four test
 
 The same Vivaldi window also contained one valid discarded internal tab whose parsed `vivExtData` had no `workspaceId`. This exposed the first Bridge compatibility case: Vivaldi can represent the default/non-custom Workspace by omitting `workspaceId`.
 
-Bridge fix:
+First Bridge fix:
 
 `d2d509ea7e416d78592b539ae8a81566cf34a355` — `Handle Vivaldi default workspace tabs in bridge`
 
@@ -90,7 +92,7 @@ After installing that fix and restarting Vivaldi, ETAPA 5A still returned `NO DU
 
 A read-only Vivaldi UI probe established the second compatibility case: `vivaldi.prefs.get("vivaldi.workspaces.list")` returned a thenable whose awaited value was an object with keys `defaultValue`, `store`, and `value`; the actual Workspace array was `.value` (observed length `7`). Callback usage returned the same wrapper shape.
 
-Latest Bridge code fix:
+Second Bridge fix:
 
 `60a2333e59efea4f2865b46dbb60adade862bc47` — `Handle wrapped Vivaldi workspace preferences`
 
@@ -102,25 +104,55 @@ That change is intentionally narrow:
 - changes only `vivaldi-bridge/dtc-vivaldi-workspace-bridge.js`
 - does not touch `worker.js`, matching, priorities, or closing logic
 
-## Exact next action
+After replacing the installed Bridge with that version and fully restarting Vivaldi, ETAPA 5A was repeated with the same 3-in-A / 1-in-B layout.
 
-Replace the installed Bridge copy at:
+ETAPA 5A result:
 
-`resources\vivaldi\dtc-mods\dtc-vivaldi-workspace-bridge.js`
-
-with the current repository version from `feature/vivaldi-workspace-scope`, fully restart Vivaldi, keep `Do nothing`, keep the same 3-in-A / 1-in-B test tabs, and repeat ETAPA 5A observation-only validation.
-
-Expected result with Workspace A active:
-
-- Workspace A: detects exactly 3
-- Workspace B test tab remains open
+- Workspace A detected exactly 3
+- Workspace B test tab remained open
 - no Bridge error or warning
 
-Do **not** perform any close operation until this observation-only test passes. Do not enable automatic close and do not press Close duplicates, row X, or Close group.
+Therefore **ETAPA 5A PASSED**.
 
-If the re-test fails, preserve fail-closed behavior and inspect diagnostic/runtime state before proposing another change.
+## ETAPA 5B result
 
-If it passes, ETAPA 5A passes and the next stage is ETAPA 5B: first controlled manual close under `VW`, still with `Do nothing` and the same test tabs.
+Using the same four tabs, still with `On duplicate tab detected = Do nothing` and `Scope = Active Vivaldi Workspace`, the maintainer pressed `Close duplicates` exactly once while Workspace A was active.
+
+Result:
+
+- before close: DTC detected exactly 3 in Workspace A
+- after close: exactly 1 test tab remained in Workspace A
+- the matching Workspace B test tab remained open
+- no Bridge error or warning appeared
+
+Therefore **ETAPA 5B PASSED**. This validates the guarded manual batch-close path for this tested A/B runtime case.
+
+## Exact next action — ETAPA 5C
+
+Test the guarded direct-row close path under `VW`, still with `On duplicate tab detected = Do nothing`.
+
+Prepare:
+
+- Workspace A: at least 2 identical test tabs using the same test URL
+- Workspace B: keep the matching test tab
+- active Workspace A
+- `Scope = Active Vivaldi Workspace`
+- `On duplicate tab detected = Do nothing`
+
+Before closing, confirm DTC lists only the duplicate tabs from Workspace A and no Bridge warning appears.
+
+Then press exactly one row X for one listed Workspace A tab.
+
+Expected result:
+
+- exactly that selected A tab closes
+- at least one matching A tab remains
+- the matching Workspace B tab remains open
+- no Bridge error or warning appears
+
+Stop after this single direct-row close. Do not press `Close duplicates`, `Close group`, another row X, and do not enable automatic close yet.
+
+If ETAPA 5C fails, preserve fail-closed behavior and inspect diagnostics/runtime state before proposing a code change.
 
 Current branch: `feature/vivaldi-workspace-scope`.
 
