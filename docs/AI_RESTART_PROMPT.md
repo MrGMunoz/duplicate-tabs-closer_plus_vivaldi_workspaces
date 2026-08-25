@@ -52,7 +52,8 @@ Stage status:
 - ETAPA 5C: passed
 - ETAPA 5D: passed
 - ETAPA 5E: passed
-- ETAPA 5F: next — deliberately make the installed Vivaldi UI Bridge unavailable and confirm fail-closed zero-close behavior, then restore it
+- ETAPA 5F: passed — missing Bridge produced explicit `VW-BRIDGE-UNREACHABLE`, zero closes, no fallback, and normal recovery after restoring the Bridge
+- ETAPA 5G: next — validate live Workspace switching and tab movement between Workspaces in observation-only mode
 
 Do not enable automatic close yet.
 
@@ -127,34 +128,79 @@ With 2 in A and 1 in B, grouped view showed one group of 2. Pressing the group-h
 
 With 2 identical tabs in A, exactly one pinned, `Keep pinned tab` enabled, and matching B tab present, `Close duplicates` once left exactly the pinned A tab; B remained open; no warning.
 
-These tests validate manual batch close, row close, grouped close, Workspace isolation, and pinned priority for the tested runtime cases.
+### 5F — missing Bridge fail-closed
 
-## Exact next action — ETAPA 5F
+Before disabling the Bridge, A contained 2 matching test tabs and DTC detected exactly 2; B contained 1 matching tab.
 
-Validate missing-Bridge fail-closed behavior.
+The installed Bridge file was temporarily renamed to `dtc-vivaldi-workspace-bridge.js.disabled` while Vivaldi was fully closed. `window.html` was not modified.
 
-Use the installed Bridge at:
+After restarting with the Bridge unavailable:
 
-`resources\vivaldi\dtc-mods\dtc-vivaldi-workspace-bridge.js`
+- both A tabs remained open
+- the B tab remained open
+- DTC showed `Vivaldi Workspace error: VW-BRIDGE-UNREACHABLE.`
+- there was no silent fallback to another Scope
+- zero tabs were closed
+
+After fully closing Vivaldi, restoring the exact `.js` filename, and restarting:
+
+- A again detected exactly 2
+- the Bridge error was gone
+
+This is a real-runtime pass for the critical unavailable-Bridge fail-closed path.
+
+These tests validate manual batch close, row close, grouped close, Workspace isolation, pinned priority, and missing-Bridge zero-close behavior for the tested runtime cases.
+
+## Exact next action — ETAPA 5G
+
+Validate live Workspace switching and tab movement between Workspaces in observation-only mode before attempting a deliberate stale/race close test.
+
+Start from the post-5F state:
+
+- Workspace A: 2 identical test tabs
+- Workspace B: 1 identical test tab
+- Bridge restored and healthy
+- `Scope = Active Vivaldi Workspace`
+- `On duplicate tab detected = Do nothing`
 
 Procedure concept:
 
-1. Fully close Vivaldi.
-2. Temporarily rename the Bridge file; do not delete it and do not edit `window.html`.
-3. Reopen Vivaldi.
-4. Keep `On duplicate tab detected = Do nothing` and the stored `VW` scope if possible.
-5. Confirm the UI reports the Bridge unavailable/error state.
-6. Confirm no tabs are closed while the Bridge is unavailable.
-7. Use `Copy diagnostics` if present and preserve the sanitized JSON.
-8. Fully close Vivaldi.
-9. Restore the Bridge to the exact original filename.
-10. Reopen Vivaldi and confirm `VW` is available again with no warning.
+1. Add one more identical test tab in B so A and B each contain exactly 2.
+2. Switch between A and B and confirm DTC detects exactly 2 in the currently active Workspace, with no warning.
+3. Move exactly one of A's test tabs to B using Vivaldi's native Workspace command.
+4. Confirm A now has only one test tab and no duplicate group for the test URL.
+5. Confirm B now has three test tabs and DTC detects exactly 3.
+6. Move that same tab back to A.
+7. Confirm A returns to exactly 2 detected and B returns to exactly 2 detected.
+8. Do not close duplicates, rows, or groups during this test.
 
-Expected result while the Bridge is unavailable: **zero closes**.
+Expected result: the `VW` filter follows real Vivaldi Workspace membership immediately and exactly, with no cross-Workspace contamination, no fallback, no Bridge error, and zero closes.
 
-Do not enable auto-close and do not modify `window.html` during this test.
+If 5G fails, stop before any race/close test and inspect the mismatch first.
 
-If 5F fails, stop closing tests and inspect diagnostics before any code change.
+After 5G passes, the next high-risk theme should be a deliberate stale-membership / close-race test targeting the existing `VW-WORKSPACE-CHANGED` / `VW-TAB-MOVED-WORKSPACE` revalidation paths. Do not improvise auto-close as the next step.
+
+## Remaining required runtime themes
+
+Still to validate substantially include:
+
+- Workspace switching and tab movement between Workspaces (5G next)
+- close-race / stale membership fail-closed behavior
+- existing scopes regression
+- discarded/hibernated tabs
+- multiple Workspaces
+- multiple windows
+- startup/session restore/lazy loading
+- default/non-custom Workspace
+- stacks/groups
+- active tab
+- Vivaldi internal pages
+- different URL on same domain
+- HTTPS/age priorities
+- incognito where applicable
+- automatic-close path only after manual/fail-closed coverage is sufficiently strong
+
+Do not claim ETAPA 5 complete until these themes have been covered reasonably.
 
 ## Safety / approval gates
 
