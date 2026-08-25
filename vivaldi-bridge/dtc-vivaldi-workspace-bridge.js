@@ -26,15 +26,22 @@
         }
     };
 
+    const extractWorkspaceList = (value) => {
+        if (Array.isArray(value)) return value;
+        if (!value || typeof value !== "object") return null;
+        if (!Object.prototype.hasOwnProperty.call(value, "value")) return null;
+        return Array.isArray(value.value) ? value.value : null;
+    };
+
     const getWorkspaceList = async () => {
         if (typeof globalThis.vivaldi?.prefs?.get !== "function") return null;
         try {
             const value = await globalThis.vivaldi.prefs.get("vivaldi.workspaces.list");
-            if (value !== undefined) return value;
+            if (value !== undefined) return extractWorkspaceList(value);
         } catch (_) {}
         return await new Promise(resolve => {
             try {
-                globalThis.vivaldi.prefs.get("vivaldi.workspaces.list", value => resolve(value ?? null));
+                globalThis.vivaldi.prefs.get("vivaldi.workspaces.list", value => resolve(extractWorkspaceList(value)));
             } catch (_) {
                 resolve(null);
             }
