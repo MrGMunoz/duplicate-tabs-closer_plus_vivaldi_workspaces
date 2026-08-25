@@ -22,11 +22,12 @@ Completed stages:
 - ETAPA 5D — controlled grouped-row/group-header X close under `VW`: passed
 - ETAPA 5E — pinned-tab priority under `VW`: passed
 - ETAPA 5F — missing Bridge fail-closed validation: passed
+- ETAPA 5G — live Workspace switching and tab movement in observation-only mode: passed
 
 Current stage:
 
 - ETAPA 5 — real runtime validation: in progress
-- Next: ETAPA 5G — validate live Workspace switching and tab movement between Workspaces in observation-only mode before attempting a deliberate stale/race close test.
+- Next: ETAPA 5H — deliberate stale-membership / close-race fail-closed validation, targeting the existing revalidation guards before any automatic-close testing.
 
 Do not merge, release, publish, open an upstream PR, force-push, delete branches/tags, perform an official version bump, add a major dependency, or make another major architecture change without explicit maintainer approval.
 
@@ -257,28 +258,42 @@ After fully closing Vivaldi, restoring the exact `.js` filename, and restarting:
 
 This validates the critical missing-Bridge fail-closed path in the tested runtime: an unreachable Bridge produced a visible diagnostic and **zero closes**, then recovered cleanly after restoration.
 
-## Exact next action — ETAPA 5G
+### ETAPA 5G — Workspace switching + tab movement: PASSED
 
-Validate live Workspace switching and tab movement between Workspaces before attempting a deliberate stale/race close.
+After the normal Vivaldi restart following ETAPA 5F, the maintainer first confirmed the restored runtime state was healthy: the Bridge was available, `Scope = Active Vivaldi Workspace`, `On duplicate tab detected = Do nothing`, no Bridge error was shown, Workspace A had two identical test tabs detected as 2, and Workspace B had one matching test tab.
 
-Reason for this order: the close guards explicitly depend on the active Workspace and current tab membership. Before engineering a race, first establish that normal runtime switching and moving tabs produces the exact expected membership changes end-to-end through the Bridge and `VW` filter.
+The maintainer then added one matching test tab to Workspace B so A and B each contained exactly two. Repeated switching between A and B continued to show exactly two duplicates in whichever Workspace was active.
 
-High-level procedure:
+One test tab was then moved from Workspace A to Workspace B using Vivaldi's native Workspace UI, without invoking any DTC close action.
 
-1. Keep `Scope = Active Vivaldi Workspace` and `On duplicate tab detected = Do nothing`.
-2. Start from the current state: two identical test tabs in Workspace A and one in Workspace B.
-3. Add one more identical test tab in Workspace B so both A and B contain exactly two.
-4. Switch repeatedly between A and B and confirm DTC detects exactly two in whichever Workspace is active, with no Bridge warning.
-5. Move exactly one test tab from A to B using Vivaldi's own Workspace command.
-6. Confirm A now has only one test tab and no duplicate group for that URL.
-7. Confirm B now has three and DTC detects exactly three there.
-8. Move that same tab back from B to A.
-9. Confirm A returns to exactly two detected and B returns to exactly two detected.
-10. Do not close duplicates, rows, or groups during this test.
+Observed result after A -> B movement:
 
-Expected result: membership follows the real Vivaldi Workspace immediately and exactly; no cross-Workspace contamination, no fallback, no error, and zero closes.
+- Workspace A contained exactly 1 test tab and no duplicate group of 2 for the test URL
+- Workspace B contained exactly 3 test tabs and DTC detected exactly 3
+- no Bridge error or warning appeared
+- zero tabs were closed
 
-If this fails, stop before any race/close test and diagnose the observed mismatch first.
+The same moved tab was then returned from Workspace B to Workspace A.
+
+Observed result after B -> A movement:
+
+- Workspace A returned to exactly 2 test tabs and DTC detected exactly 2
+- Workspace B returned to exactly 2 test tabs and DTC detected exactly 2
+- no Bridge error or warning appeared
+- zero tabs were closed
+- no silent fallback or cross-Workspace contamination was observed
+
+This validates that the runtime `VW` filter follows both live active-Workspace switching and real tab membership changes end-to-end through the Bridge in the tested observation-only case.
+
+## Exact next action — ETAPA 5H
+
+Validate the fail-closed stale-membership / close-race guard before enabling any automatic-close behavior.
+
+Reason for this order: code review confirms the normal duplicate-close path carries a `workspaceGuard` from the initial filtered Workspace snapshot and calls `revalidateActiveVivaldiWorkspaceTabs` immediately before removing a tab. Direct row/group closes similarly resolve the current Workspace and revalidate immediately before `chrome.tabs.remove`. The revalidation path is specifically required to abort with `VW-WORKSPACE-CHANGED` if the active Workspace changed or `VW-TAB-MOVED-WORKSPACE` if a required tab moved to another Workspace.
+
+The next runtime test should deliberately create a stale-membership or active-Workspace change between the initial Workspace decision and the close attempt, while keeping the test layout disposable and tightly controlled. Expected result: **zero closes** for the affected close operation and an explicit fail-closed diagnostic. Do not enable automatic close merely to manufacture this race.
+
+If a deterministic manual race cannot be created safely with the existing UI, stop and inspect the available UI/runtime timing hooks before changing code. Do not weaken the guard, add heuristics, or introduce fallback behavior to make the test easier.
 
 ## Diagnostics
 
@@ -327,8 +342,7 @@ Do not alter unless directly required:
 
 Still to validate substantially include:
 
-- Workspace switching and tab movement between Workspaces (ETAPA 5G next)
-- close-race / stale membership fail-closed behavior
+- close-race / stale membership fail-closed behavior (ETAPA 5H next)
 - active tab behavior
 - different URL on same domain
 - HTTPS/age priorities
@@ -350,6 +364,8 @@ Already validated substantially:
 - grouped close
 - pinned priority
 - missing/unavailable Bridge -> explicit error and zero closes
+- live Workspace switching
+- moving tabs between Workspaces in observation-only mode
 
 ## Documentation / maintainer interaction requirement
 
