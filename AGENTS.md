@@ -13,7 +13,8 @@ Before changing anything, read:
 1. `AGENTS.md`
 2. `docs/PROJECT_HANDOFF.md`
 3. `docs/VIVALDI_WORKSPACE_BRIDGE.md`
-4. `docs/AI_RESTART_PROMPT.md`
+4. `docs/UPDATE_RESILIENCE_AND_DEPLOYMENT.md`
+5. `docs/AI_RESTART_PROMPT.md`
 
 ## Repository boundaries
 
@@ -60,6 +61,23 @@ The Bridge must never close, move, activate, or edit tabs. It only reads Workspa
 
 The Bridge only accepts requests from the stable extension ID assigned to this fork.
 
+## Operational resilience and deployment requirements
+
+The Vivaldi UI Bridge is installed through Vivaldi UI resources and may be removed, replaced, or made incompatible by a Vivaldi update. A real update-related failure occurred on 2026-09-01 and is documented in `docs/UPDATE_RESILIENCE_AND_DEPLOYMENT.md`.
+
+Treat the following as explicit project requirements:
+
+- verify that the repaired persistent Bridge loads correctly after the next normal Vivaldi restart without DevTools injection;
+- investigate a maintainable way to detect when a Vivaldi update removed or broke the Bridge;
+- distinguish a missing Bridge from a stale/incompatible Bridge or changed Vivaldi internal API;
+- preserve fail-closed behavior during all such failures;
+- provide simple, sanitized, human-readable recovery guidance;
+- investigate how the fork can be installed and used normally without leaving Vivaldi Developer mode enabled;
+- do not assume that a local `.crx` solves normal Windows deployment;
+- do not add invasive permissions, enterprise policy, store publication, auto-patching of Vivaldi files, or another major architecture mechanism without explicit maintainer approval.
+
+A store-installed or otherwise normally installed extension does **not** by itself solve persistence of the separate Vivaldi UI Bridge. Treat extension deployment and Bridge update-resilience as distinct problems.
+
 ## Diagnostics requirement
 
 Workspace failures must not be silent.
@@ -99,6 +117,9 @@ At minimum validate:
 - races during close
 - startup/session restore
 - internal pages
+- normal restart after persistent Bridge repair
+- post-Vivaldi-update Bridge health / failure detection
+- intended normal installation path without requiring Developer mode for day-to-day use
 
 ## Human approval gates
 
