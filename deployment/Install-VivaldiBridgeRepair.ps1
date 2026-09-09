@@ -13,9 +13,7 @@ function Test-IsAdministrator {
 
 if (!(Test-IsAdministrator)) {
     $args = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ('"{0}"' -f $PSCommandPath))
-    if ($StoreExtensionId) {
-        $args += @("-StoreExtensionId", $StoreExtensionId)
-    }
+    if ($StoreExtensionId) { $args += @("-StoreExtensionId", $StoreExtensionId) }
     if ($SkipScheduledTask) { $args += "-SkipScheduledTask" }
     $process = Start-Process -FilePath "powershell.exe" -Verb RunAs -ArgumentList $args -Wait -PassThru
     exit $process.ExitCode
@@ -27,6 +25,7 @@ $RepairRepoSource = Join-Path $PSScriptRoot "Repair-VivaldiBridge.ps1"
 $ProductRoot = Join-Path $env:LOCALAPPDATA "DTC-Vivaldi-Workspace"
 $BridgeDir = Join-Path $ProductRoot "bridge"
 $ToolsDir = Join-Path $ProductRoot "tools"
+$ConfigFile = Join-Path $ProductRoot "config.json"
 $BridgeInstalled = Join-Path $BridgeDir "dtc-vivaldi-workspace-bridge.js"
 $RepairInstalled = Join-Path $ToolsDir "Repair-VivaldiBridge.ps1"
 $TaskName = "DTC Vivaldi Workspace Bridge Repair"
@@ -38,35 +37,38 @@ function Ensure-Directory([string]$Path) {
 
 if (!(Test-Path $BridgeRepoSource)) { throw "Bridge source not found: $BridgeRepoSource" }
 if (!(Test-Path $RepairRepoSource)) { throw "Repair helper not found: $RepairRepoSource" }
-if ($StoreExtensionId -and $StoreExtensionId -notmatch '^[a-p]{32}$') {
-    throw "StoreExtensionId must be a 32-character Chromium extension ID (letters a-p only)."
-}
 
 Ensure-Directory $BridgeDir
 Ensure-Directory $ToolsDir
 Ensure-Directory (Join-Path $ProductRoot "logs")
 
-$bridgeText = Get-Content $BridgeRepoSource -Raw
-if ($StoreExtensionId) {
-    $bridgeText = $bridgeText.Replace($StoreIdPlaceholder, $StoreExtensionId)
+if (!$StoreExtensionId -and (Test-Path $ConfigFile)) {
+    try {
+        $saved = Get-Content $ConfigFile -Raw | ConvertFrom-Json
+        if ($saved.StoreExtensionId -match '^[a-p]{32}$') { $StoreExtensionId = $saved.StoreExtensionId }
+    } catch {}
 }
+if ($StoreExtensionId -and $StoreExtensionId -notmatch '^[a-p]{32}$') {
+    throw "StoreExtensionId must be a 32-character Chromium extension ID (letters a-p only)."
+}
+if ($StoreExtensionId) {
+    @{ StoreExtensionId = $StoreExtensionId } | ConvertTo-Json | Set-Content $ConfigFile -Encoding UTF8
+}
+
+$bridgeText = Get-Content $BridgeRepoSource -Raw
+if ($StoreExtensionId) { $bridgeText = $bridgeText.Replace($StoreIdPlaceholder, $StoreExtensionId) }
 [System.IO.File]::WriteAllText($BridgeInstalled, $bridgeText, [System.Text.UTF8Encoding]::new($false))
 Copy-Item $RepairRepoSource $RepairInstalled -Force
 
 Write-Host "Installed persistent Bridge source to:"
 Write-Host "  $BridgeInstalled"
-if ($StoreExtensionId) {
-    Write-Host "Authorized Chrome Web Store extension ID: $StoreExtensionId"
-} else {
-    Write-Host "No Chrome Web Store ID supplied; only the stable development ID is authorized."
-}
+if ($StoreExtensionId) { Write-Host "Authorized Chrome Web Store extension ID: $StoreExtensionId" }
+else { Write-Host "No Chrome Web Store ID supplied; only the stable development ID is authorized." }
 Write-Host "Installed repair helper to:"
 Write-Host "  $RepairInstalled"
 
 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $RepairInstalled
-if ($LASTEXITCODE -ne 0) {
-    Write-Warning "Initial Bridge repair returned exit code $LASTEXITCODE. The scheduled repair can retry later."
-}
+if ($LASTEXITCODE -ne 0) { Write-Warning "Initial Bridge repair returned exit code $LASTEXITCODE. The scheduled repair can retry later." }
 
 if (!$SkipScheduledTask) {
     $escapedRepair = '"' + $RepairInstalled + '"'
