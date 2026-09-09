@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("firefox", "chrome", "all")]
+    [ValidateSet("firefox", "chrome", "vivaldi-store", "all")]
     [string]$Target = "all"
 )
 
@@ -106,4 +106,12 @@ if ($Target -eq "firefox" -or $Target -eq "all") {
 }
 if ($Target -eq "chrome" -or $Target -eq "all") {
     Build-Package "manifest-c.json" "duplicate-tabs-closer-chrome.zip" -StripKeys @("externally_connectable")
+}
+if ($Target -eq "vivaldi-store" -or $Target -eq "all") {
+    # Chrome Web Store upload package for the Vivaldi Unlisted deployment path.
+    # The DEV-only externally_connectable wildcard is deliberately stripped.
+    # The manifest public key is retained for the existing development ID, but the
+    # Chrome Web Store may assign a different production item ID; deployment docs
+    # explain how to authorize that ID in the Bridge installer after item creation.
+    Build-Package "manifest-c.json" "duplicate-tabs-closer-vivaldi-unlisted.zip" -StripKeys @("externally_connectable")
 }
