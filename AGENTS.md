@@ -11,11 +11,14 @@ The fork is maintained through AI-assisted development / "vibe coding" because t
 Before changing anything, read:
 
 1. `AGENTS.md`
-2. `docs/PROJECT_HANDOFF.md`
-3. `docs/VIVALDI_WORKSPACE_BRIDGE.md`
-4. `docs/UPDATE_RESILIENCE_AND_DEPLOYMENT.md`
-5. `docs/PRIVATE_LOCAL_DEPLOYMENT_PLAN.md`
-6. `docs/AI_RESTART_PROMPT.md`
+2. `docs/CURRENT_CHECKPOINT_2026-09-09.md`
+3. `docs/PROJECT_HANDOFF.md`
+4. `docs/VIVALDI_WORKSPACE_BRIDGE.md`
+5. `docs/UPDATE_RESILIENCE_AND_DEPLOYMENT.md`
+6. `docs/PRIVATE_LOCAL_DEPLOYMENT_PLAN.md`
+7. `docs/AI_RESTART_PROMPT.md`
+
+`docs/CURRENT_CHECKPOINT_2026-09-09.md` is the authoritative resume point for the latest runtime/deployment state. If an older deployment statement in another document conflicts with that checkpoint, follow the checkpoint and then reconcile the older document rather than repeating superseded work.
 
 ## Repository boundaries
 
