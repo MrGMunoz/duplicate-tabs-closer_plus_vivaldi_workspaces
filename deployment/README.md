@@ -138,4 +138,23 @@ A future migration helper may automate the settings transfer, but this deploymen
 
 ## Validation status
 
-These deployment scripts are newly added and must be runtime-tested on the maintainer's Windows/Vivaldi installation before being considered validated. Core `VW` behavior remains separate and unchanged. Validation must not require a forced Vivaldi shutdown or restart; any Bridge activation that needs a new browser process is deferred until the next natural restart.
+Runtime validation on the maintainer's current Windows/Vivaldi user profile has now confirmed:
+
+- persistent deployment directory is installed under `%LOCALAPPDATA%\DTC-Vivaldi-Workspace`;
+- the Scheduled Task was upgraded from the original direct-PowerShell/15-minute design to the hidden WScript/hourly design;
+- manual execution of `DTC Vivaldi Workspace Bridge Repair` produced no visible PowerShell window and returned `0x0`;
+- the `vivaldi-store` build completed successfully;
+- `duplicate-tabs-closer-vivaldi-unlisted.zip` was produced and extracted successfully;
+- `manifest.json` was present in the extracted package;
+- the unpacked Vivaldi-store build loaded successfully in Vivaldi with no extension-page error;
+- the loaded development extension ID matched the expected stable ID `jkhljmjemfaeoklndkcnehbcnmfjcfam`.
+
+Pending deployment validation:
+
+- Bridge availability in a fresh Vivaldi UI process after the maintainer's next natural browser restart;
+- creation/review of the Chrome Web Store Unlisted item;
+- confirmation of the production Web Store extension ID;
+- authorization of that exact production ID in the persistent Bridge;
+- final normal Web Store installation without day-to-day Developer mode.
+
+Validation must not require a forced Vivaldi shutdown or restart; any Bridge activation that needs a new browser process is deferred until the next natural restart.
