@@ -14,7 +14,8 @@ Before changing anything, read:
 2. `docs/PROJECT_HANDOFF.md`
 3. `docs/VIVALDI_WORKSPACE_BRIDGE.md`
 4. `docs/UPDATE_RESILIENCE_AND_DEPLOYMENT.md`
-5. `docs/AI_RESTART_PROMPT.md`
+5. `docs/PRIVATE_LOCAL_DEPLOYMENT_PLAN.md`
+6. `docs/AI_RESTART_PROMPT.md`
 
 ## Repository boundaries
 
@@ -76,7 +77,9 @@ Treat the following as explicit project requirements:
 - preserve fail-closed behavior during all such failures;
 - provide simple, sanitized, human-readable recovery guidance;
 - investigate how the fork can be installed and used normally without leaving Vivaldi Developer mode enabled;
-- do not assume that a local `.crx` solves normal Windows deployment;
+- **current maintainer preference is private/local deployment only; do not resume Chrome Web Store Public/Unlisted publication unless the maintainer explicitly changes that decision**;
+- the next preferred feasibility path is a private signed/self-hosted CRX plus Vivaldi-scoped local policy, if the maintainer's installed Vivaldi version supports it; see `docs/PRIVATE_LOCAL_DEPLOYMENT_PLAN.md`;
+- do not assume that a local `.crx` alone solves normal Windows deployment;
 - do not add invasive permissions, enterprise policy, store publication, auto-patching of Vivaldi files, or another major architecture mechanism without explicit maintainer approval.
 
 A store-installed or otherwise normally installed extension does **not** by itself solve persistence of the separate Vivaldi UI Bridge. Treat extension deployment and Bridge update-resilience as distinct problems.
