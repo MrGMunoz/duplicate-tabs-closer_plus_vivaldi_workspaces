@@ -6,7 +6,14 @@
 // it exposes Workspace membership to the companion fork and never closes,
 // moves, activates or edits tabs.
 (() => {
-    const ALLOWED_EXTENSION_ID = "jkhljmjemfaeoklndkcnehbcnmfjcfam";
+    // The first ID is the stable development/fork ID. The deployment installer may
+    // replace the placeholder with the Chrome Web Store ID after an Unlisted item is
+    // created. Invalid/unreplaced placeholders are filtered out, so access never
+    // broadens to arbitrary extensions.
+    const ALLOWED_EXTENSION_IDS = new Set([
+        "jkhljmjemfaeoklndkcnehbcnmfjcfam",
+        "__DTC_STORE_EXTENSION_ID__"
+    ].filter(id => /^[a-p]{32}$/.test(id)));
     const PROTOCOL_VERSION = 1;
     const DEFAULT_WORKSPACE_ID = "__dtc_vivaldi_default_workspace__";
 
@@ -75,10 +82,6 @@
             const rawWorkspaceId = ext.workspaceId;
             let workspaceId;
             if (rawWorkspaceId === undefined || rawWorkspaceId === null) {
-                // Vivaldi represents tabs in the default (non-custom) Workspace without
-                // a workspaceId in vivExtData. Keep that state explicit instead of
-                // treating it as an unresolved API read. Malformed/missing vivExtData
-                // still returns null above and therefore remains fail-closed.
                 workspaceId = DEFAULT_WORKSPACE_ID;
             } else {
                 if (!isValidWorkspaceId(rawWorkspaceId)) return null;
@@ -164,10 +167,6 @@
 
         const knownInfos = [activeInfo, ...tabs];
         if (knownInfos.some(info => info.workspaceId === DEFAULT_WORKSPACE_ID)) {
-            // If every tab suddenly lost workspaceId because Vivaldi changed its internal
-            // API, treating all of them as the default Workspace would be unsafe. Require
-            // independent evidence that this window still exposes at least one recognized
-            // custom Workspace ID; otherwise fail closed.
             const hasEvidence = await hasCustomWorkspaceEvidence(windowId, validWorkspaceIds, knownInfos);
             if (!hasEvidence) return { ok: false, reason: "default-workspace-unverified" };
         }
@@ -188,7 +187,7 @@
     }
 
     globalThis.__dtcVivaldiWorkspaceBridgeListener = (message, sender, sendResponse) => {
-        if (!sender || sender.id !== ALLOWED_EXTENSION_ID) return false;
+        if (!sender || !ALLOWED_EXTENSION_IDS.has(sender.id)) return false;
         if (!message || message.protocolVersion !== PROTOCOL_VERSION || typeof message.requestId !== "string") return false;
 
         if (message.action === "DTC_VIVALDI_WORKSPACE_PING") {
