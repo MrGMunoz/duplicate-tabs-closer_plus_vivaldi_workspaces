@@ -67,7 +67,10 @@ The Vivaldi UI Bridge is installed through Vivaldi UI resources and may be remov
 
 Treat the following as explicit project requirements:
 
-- verify that the repaired persistent Bridge loads correctly after the next normal Vivaldi restart without DevTools injection;
+- **Never require the maintainer to close, restart, or interrupt Vivaldi as part of installation, repair, validation, deployment, or routine maintenance.** The maintainer may have long-running work that cannot be interrupted.
+- If an on-disk Bridge change requires a fresh Vivaldi UI process to become active, install/repair it now and defer activation/verification until the maintainer's next **natural** Vivaldi restart. Never instruct the maintainer to restart merely for this project.
+- Scheduled/background maintenance must be invisible and must not steal focus, raise a console window, or otherwise interrupt desktop use.
+- verify that the repaired persistent Bridge loads correctly after a future normal/natural Vivaldi restart without DevTools injection;
 - investigate a maintainable way to detect when a Vivaldi update removed or broke the Bridge;
 - distinguish a missing Bridge from a stale/incompatible Bridge or changed Vivaldi internal API;
 - preserve fail-closed behavior during all such failures;
@@ -117,7 +120,7 @@ At minimum validate:
 - races during close
 - startup/session restore
 - internal pages
-- normal restart after persistent Bridge repair
+- natural restart after persistent Bridge repair, whenever the maintainer next restarts Vivaldi for unrelated reasons
 - post-Vivaldi-update Bridge health / failure detection
 - intended normal installation path without requiring Developer mode for day-to-day use
 
