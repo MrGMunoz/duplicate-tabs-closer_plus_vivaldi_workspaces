@@ -53,8 +53,11 @@ const isTabComplete = tab => tab.status === "complete" || tab.status === "unload
 // eslint-disable-next-line no-unused-vars
 const getTab = (tabId, silent = false) => new Promise((resolve) => {
     chrome.tabs.get(tabId, tab => {
-        if (chrome.runtime.lastError && !silent) console.error("getTab error:", chrome.runtime.lastError.message);
-        resolve(chrome.runtime.lastError ? null : tab);
+        const lastError = chrome.runtime.lastError;
+        const message = lastError?.message || "";
+        const tabAlreadyGone = message.includes("No tab with id");
+        if (lastError && !silent && !tabAlreadyGone) console.error("getTab error:", message);
+        resolve(lastError ? null : tab);
     });
 });
 
