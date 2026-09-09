@@ -1,4 +1,5 @@
 param(
+    [string]$StoreExtensionId = "",
     [switch]$SkipScheduledTask
 )
 
@@ -13,6 +14,7 @@ $ToolsDir = Join-Path $ProductRoot "tools"
 $BridgeInstalled = Join-Path $BridgeDir "dtc-vivaldi-workspace-bridge.js"
 $RepairInstalled = Join-Path $ToolsDir "Repair-VivaldiBridge.ps1"
 $TaskName = "DTC Vivaldi Workspace Bridge Repair"
+$StoreIdPlaceholder = "__DTC_STORE_EXTENSION_ID__"
 
 function Ensure-Directory([string]$Path) {
     if (!(Test-Path $Path)) { New-Item -ItemType Directory -Path $Path -Force | Out-Null }
@@ -20,16 +22,28 @@ function Ensure-Directory([string]$Path) {
 
 if (!(Test-Path $BridgeRepoSource)) { throw "Bridge source not found: $BridgeRepoSource" }
 if (!(Test-Path $RepairRepoSource)) { throw "Repair helper not found: $RepairRepoSource" }
+if ($StoreExtensionId -and $StoreExtensionId -notmatch '^[a-p]{32}$') {
+    throw "StoreExtensionId must be a 32-character Chromium extension ID (letters a-p only)."
+}
 
 Ensure-Directory $BridgeDir
 Ensure-Directory $ToolsDir
 Ensure-Directory (Join-Path $ProductRoot "logs")
 
-Copy-Item $BridgeRepoSource $BridgeInstalled -Force
+$bridgeText = Get-Content $BridgeRepoSource -Raw
+if ($StoreExtensionId) {
+    $bridgeText = $bridgeText.Replace($StoreIdPlaceholder, $StoreExtensionId)
+}
+[System.IO.File]::WriteAllText($BridgeInstalled, $bridgeText, [System.Text.UTF8Encoding]::new($false))
 Copy-Item $RepairRepoSource $RepairInstalled -Force
 
 Write-Host "Installed persistent Bridge source to:"
 Write-Host "  $BridgeInstalled"
+if ($StoreExtensionId) {
+    Write-Host "Authorized Chrome Web Store extension ID: $StoreExtensionId"
+} else {
+    Write-Host "No Chrome Web Store ID supplied; only the stable development ID is authorized."
+}
 Write-Host "Installed repair helper to:"
 Write-Host "  $RepairInstalled"
 
